@@ -23,8 +23,13 @@ from ..soundboard.player import SoundboardPlayer
 logger = logging.getLogger("Audiover.API")
 
 
-def pick_file_native() -> Optional[str]:
-    """Linux GNOME/KDE modern dosya seçicisini açar (Zenity veya Kdialog)."""
+def pick_file_native() -> tuple[Optional[str], bool]:
+    """
+    Linux GNOME/KDE modern dosya seçicisini açar (Zenity veya Kdialog).
+    Dönüş: (file_path, was_handled)
+    - was_handled=True: Zenity/Kdialog çalıştı (kullanıcı dosya seçti veya iptal etti).
+    - was_handled=False: Zenity/Kdialog sistemde yok, fallback kullanılabilir.
+    """
     if shutil.which("zenity"):
         try:
             cmd = [
@@ -36,8 +41,9 @@ def pick_file_native() -> Optional[str]:
             ]
             proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if proc.returncode == 0 and proc.stdout.strip():
-                return proc.stdout.strip()
-            return None
+                return proc.stdout.strip(), True
+            # returncode != 0 (kullanıcı iptal etti veya pencereyi kapattı)
+            return None, True
         except Exception as e:
             logger.debug(f"Zenity file picker error: {e}")
 
@@ -53,12 +59,12 @@ def pick_file_native() -> Optional[str]:
             ]
             proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             if proc.returncode == 0 and proc.stdout.strip():
-                return proc.stdout.strip()
-            return None
+                return proc.stdout.strip(), True
+            return None, True
         except Exception as e:
             logger.debug(f"Kdialog file picker error: {e}")
 
-    return None
+    return None, False
 
 DEFAULT_PRESETS: dict[str, dict] = {
     "Clean": {
@@ -215,9 +221,12 @@ class AudioverAPI:
 
     def add_sound_file(self) -> dict:
         """Yerel dosya seçici açar (Öncelikli olarak GNOME/KDE modern sistem seçicisi)."""
-        file_path = pick_file_native()
-        if not file_path:
-            # Fallback to pywebview window dialog
+        file_path, was_handled = pick_file_native()
+        if was_handled:
+            if not file_path or not os.path.exists(file_path):
+                return {"ok": False, "cancelled": True}
+        else:
+            # Sadece sistemde Zenity/Kdialog yoksa pywebview fallback diyaloğu açılır
             win = webview.windows[0] if webview.windows else None
             if win is None:
                 return {"ok": False, "cancelled": True}
@@ -229,7 +238,7 @@ class AudioverAPI:
                     "All Files (*.*)",
                 ),
             )
-            if not result:
+            if not result or not result[0]:
                 return {"ok": False, "cancelled": True}
             file_path = result[0]
 
