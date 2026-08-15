@@ -5,4 +5,4 @@ soundfile>=0.12.1
 pydub>=0.25.1
 audioop-lts>=0.2.1
 miniaudio>=1.60
-PyQt6>=6.6.0
+pywebview[qt]>=5.3

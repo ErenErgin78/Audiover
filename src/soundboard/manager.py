@@ -166,6 +166,37 @@ class SoundboardManager:
         self.save_to_config()
         return sound_item
 
+    def add_sound_from_bytes(
+        self,
+        filename: str,
+        data_bytes: bytes,
+        name: Optional[str] = None,
+        hotkey: Optional[str] = None,
+        volume: float = 1.0,
+        loop: bool = False,
+        category: str = "General",
+    ) -> Optional[SoundItem]:
+        """Saves audio data bytes directly to the library assets."""
+        sound_id = str(uuid.uuid4())[:8]
+        if not name:
+            name = os.path.splitext(os.path.basename(filename))[0]
+
+        dest_filename = f"{sound_id}_{os.path.basename(filename)}"
+        target_path = os.path.join(self.sounds_dir, dest_filename)
+
+        with open(target_path, "wb") as f:
+            f.write(data_bytes)
+
+        return self.add_sound_file(
+            file_path=target_path,
+            name=name,
+            copy_to_assets=False,
+            hotkey=hotkey,
+            volume=volume,
+            loop=loop,
+            category=category,
+        )
+
     def remove_sound(self, sound_id: str):
         """Removes a sound from library and player."""
         if sound_id in self.sounds:

@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+/* ── Design Tokens ──────────────────────────────────────────── */
+:root {
+  --bg-base:    #0F111A;
+  --bg-card:    #181A27;
+  --bg-surface: #1B1E2E;
+  --bg-sidebar: #161824;
+  --border:     #282C40;
+  --border-hover: #363B59;
+  --accent:     #00E5FF;
+  --accent2:    #7C4DFF;
+  --green:      #00E676;
+  --red:        #FF1744;
+  --yellow:     #FFD600;
+  --text:       #E0E6ED;
+  --text-muted: #8F9CAE;
+  --text-dim:   #4A5168;
+}
+
+/* ── Base Reset ─────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-base);
+  color: var(--text);
+  font-family: 'Inter', 'Segoe UI', 'Ubuntu', 'DejaVu Sans', sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-hover); }
+
+/* ── Custom Range Input ─────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+input[type="range"]::-webkit-slider-thumb:hover {
+  background: var(--accent);
+  border-color: #fff;
+}
+input[type="range"]::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent);
+  cursor: pointer;
+}
+
+/* ── Neon Gradient Utility ──────────────────────────────────── */
+.gradient-neon {
+  background: linear-gradient(135deg, var(--accent2), var(--accent));
+}
+
+/* ── VU Meter Track ─────────────────────────────────────────── */
+.vu-track {
+  background: linear-gradient(90deg, var(--green) 0%, var(--yellow) 75%, var(--red) 95%);
+  border-radius: 3px;
+  transform-origin: left center;
+  transition: transform 0.04s linear;
+}

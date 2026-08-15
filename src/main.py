@@ -8,15 +8,14 @@ if PROJECT_ROOT not in sys.path:
 
 import logging
 import signal
-from PyQt6.QtWidgets import QApplication
+import webview
 from src.audio.dsp import VoiceDSP
 from src.audio.router import AudioRouter
 from src.audio.stream import AudioStreamEngine
 from src.input.hotkeys import HotkeyManager
 from src.soundboard.manager import SoundboardManager
 from src.soundboard.player import SoundboardPlayer
-from src.ui.main_window import MainWindow
-from src.ui.styles import MODERN_STYLE
+from src.ui.api import AudioverAPI
 
 # Setup logging
 logging.basicConfig(
@@ -26,6 +25,9 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger("Audiover.Main")
+
+# Built React frontend path
+UI_DIST = os.path.join(PROJECT_ROOT, "ui", "dist", "index.html")
 
 
 def main():
@@ -41,7 +43,8 @@ def main():
 
     if not router.setup_virtual_devices():
         logger.warning(
-            "Could not setup PipeWire virtual devices automatically. Ensure pactl is installed and PipeWire is running."
+            "Could not setup PipeWire virtual devices automatically. "
+            "Ensure pactl is installed and PipeWire is running."
         )
 
     # 2. Initialize DSP Engine
@@ -70,41 +73,65 @@ def main():
     hotkey_mgr = HotkeyManager()
     hotkey_mgr.start()
 
-    # 6. Start PyQt6 GUI Application
-    app = QApplication(sys.argv)
-    app.setStyleSheet(MODERN_STYLE)
+    # 6. Register global hotkeys
+    hotkey_mgr.register_hotkey("F9", lambda: setattr(stream_engine, "is_muted", not stream_engine.is_muted))
+    hotkey_mgr.register_hotkey("F10", _make_bypass_toggle(dsp))
+    hotkey_mgr.register_hotkey("F11", player.stop_all)
+    hotkey_mgr.register_hotkey("F8", lambda: stream_engine.set_hear_myself(not stream_engine.hear_myself))
 
-    window = MainWindow(
+    # 7. Start Audio Stream Engine
+    stream_engine.start()
+
+    # 8. Create JS ↔ Python API bridge
+    api = AudioverAPI(
         router=router,
-        dsp=dsp,
         stream_engine=stream_engine,
         soundboard_player=player,
         soundboard_manager=sb_manager,
         hotkey_manager=hotkey_mgr,
     )
 
-    # 7. Start Audio Stream Engine after devices & panels are loaded
-    stream_engine.start()
+    # 9. Launch PyWebView window
+    window = webview.create_window(
+        title="Audiover — Voice & Soundboard Engine",
+        url=UI_DIST,
+        js_api=api,
+        width=1080,
+        height=720,
+        min_size=(900, 600),
+        background_color="#0F111A",
+    )
 
-    window.show()
+    def on_closing():
+        api.shutdown()
+
+    window.events.closing += on_closing
+    window.events.closed += on_closing
 
     # Handle Ctrl+C gracefully
     def sigint_handler(*_):
-        logger.info("Received interrupt signal. Closing window...")
-        window.close()
-        app.quit()
+        logger.info("Received interrupt signal. Closing...")
+        api.shutdown()
+        os._exit(0)
 
     signal.signal(signal.SIGINT, sigint_handler)
     signal.signal(signal.SIGTERM, sigint_handler)
 
-    exit_code = app.exec()
+    try:
+        webview.start(gui="qt", debug=False)
+    finally:
+        logger.info("Audiover closed gracefully.")
+        api.shutdown()
+        os._exit(0)
 
-    # Final cleanup
-    stream_engine.stop()
-    hotkey_mgr.stop()
-    router.cleanup()
-    logger.info("Audiover closed gracefully.")
-    sys.exit(exit_code)
+
+def _make_bypass_toggle(dsp: VoiceDSP):
+    """F10 hotkey: toggle DSP bypass."""
+    def toggle():
+        opts = dsp.options  # mevcut DSPOptions'ı al
+        opts.bypass = not opts.bypass
+        dsp.update_options(opts)
+    return toggle
 
 
 if __name__ == "__main__":

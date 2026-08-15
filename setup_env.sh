@@ -39,6 +39,24 @@ pip install -r requirements.txt
 # Create necessary runtime directories
 mkdir -p config assets/sounds
 
+# ── Frontend (React / Vite) ────────────────────────────────────
+echo "[+] Checking Node.js..."
+if ! command -v node &> /dev/null; then
+    echo "[-] Node.js not found. Please install it: sudo dnf install nodejs"
+    echo "    Then re-run this script."
+    exit 1
+fi
+echo "[+] Detected Node: $(node --version)  npm: $(npm --version)"
+
+echo "[+] Installing frontend dependencies..."
+cd ui && npm install
+
+echo "[+] Building React frontend..."
+npm run build
+cd ..
+echo "[+] Frontend build complete (ui/dist/)"
+# ──────────────────────────────────────────────────────────────
+
 # Check user group for Wayland global hotkeys (/dev/input access)
 if groups | grep -q '\binput\b'; then
     echo "[+] User is already in the 'input' group. Global evdev hotkeys are enabled!"
