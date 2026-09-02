@@ -1,53 +1,50 @@
 /**
- * pywebview JS → Python köprüsü.
- * window.pywebview hazır olmadan önce çağrı yapılırsa
- * kuyruk mekanizması bekleme sağlar.
+ * Audiover IPC Bridge
+ * Supports Tauri v2 (native Rust backend) & PyWebView fallback
  */
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { invoke, isTauri } from "@tauri-apps/api/core";
 
 declare global {
   interface Window {
     pywebview?: {
       api: Record<string, (...args: any[]) => Promise<any>>;
     };
+    __TAURI_INTERNALS__?: unknown;
   }
 }
 
-function getApi() {
+function hasTauri(): boolean {
+  return typeof window !== "undefined" && (isTauri() || Boolean(window.__TAURI_INTERNALS__));
+}
+
+function getPyWebViewApi() {
   return window.pywebview?.api ?? null;
 }
 
-/**
- * pywebview 5.x'te API metotları `pywebviewready` event'ından sonra kullanılabilir.
- * Event zaten geçmişse doğrudan resolve eder; geçmemişse bekler.
- * Güvenli fallback: 5 saniye sonra polling'e geçer.
- */
-let _apiReady: Promise<NonNullable<ReturnType<typeof getApi>>> | null = null;
+let _pywebviewReady: Promise<NonNullable<ReturnType<typeof getPyWebViewApi>>> | null = null;
 
-function waitForApi(): Promise<NonNullable<ReturnType<typeof getApi>>> {
-  if (_apiReady) return _apiReady;
+function waitForPyWebView(): Promise<NonNullable<ReturnType<typeof getPyWebViewApi>>> {
+  if (_pywebviewReady) return _pywebviewReady;
 
-  _apiReady = new Promise((resolve) => {
-    // Eğer API zaten hazırsa hemen resolve et
-    const api = getApi();
+  _pywebviewReady = new Promise((resolve) => {
+    const api = getPyWebViewApi();
     if (api && Object.keys(api).length > 0) {
       resolve(api);
       return;
     }
 
-    // pywebviewready event'ını dinle
     const onReady = () => {
-      const readyApi = getApi();
+      const readyApi = getPyWebViewApi();
       if (readyApi) resolve(readyApi);
-      else poll(); // event geldi ama api hâlâ null ise polling yap
+      else poll();
     };
     window.addEventListener("pywebviewready", onReady, { once: true });
 
-    // Fallback polling (500ms aralıklı, 10 deneme)
     let attempts = 0;
     const poll = () => {
-      const a = getApi();
+      const a = getPyWebViewApi();
       if (a && Object.keys(a).length > 0) {
         window.removeEventListener("pywebviewready", onReady);
         resolve(a);
@@ -55,19 +52,10 @@ function waitForApi(): Promise<NonNullable<ReturnType<typeof getApi>>> {
       }
       if (attempts++ < 100) setTimeout(poll, 50);
     };
-    // pywebviewready gelmezse 500ms sonra polling başlat
     setTimeout(poll, 500);
   });
 
-  return _apiReady;
-}
-
-async function call<T = unknown>(method: string, ...args: any[]): Promise<T> {
-  const api = await waitForApi();
-  if (typeof api[method] !== "function") {
-    throw new Error(`API method '${method}' not found`);
-  }
-  return api[method](...args) as Promise<T>;
+  return _pywebviewReady;
 }
 
 /* ── Typed wrappers ──────────────────────────────────────────── */
@@ -83,7 +71,7 @@ export interface AppState {
   presets: Record<string, PresetConfig>;
   hotkey_permission: boolean;
   hotkey_backend?: "portal" | "evdev" | "in_window";
-  language?: "tr" | "en";
+  language?: "tr" | "en" | string;
 }
 
 export interface HotkeyStatus {
@@ -149,47 +137,246 @@ export interface AudioDevicesState {
 }
 
 export const api = {
-  getState: () => call<AppState>("get_state"),
-  setLanguage: (lang: string) => call<{ ok: boolean; language: string }>("set_language", lang),
-  setEngineActive: (active: boolean) => call<{ ok: boolean; active: boolean }>("set_engine_active", active),
-  setMuted: (muted: boolean) => call<void>("set_muted", muted),
-  setHearMyself: (enabled: boolean) => call<void>("set_hear_myself", enabled),
-  setHearSoundboard: (enabled: boolean) => call<void>("set_hear_soundboard", enabled),
+  getState: async (): Promise<AppState> => {
+    if (hasTauri()) return invoke<AppState>("get_state");
+    const py = await waitForPyWebView();
+    return py.get_state();
+  },
 
-  getMeters: () => call<Meters>("get_meters"),
+  setLanguage: async (lang: string) => {
+    if (hasTauri()) return invoke<{ ok: boolean; language: string }>("set_language", { lang });
+    const py = await waitForPyWebView();
+    return py.set_language(lang);
+  },
 
-  getPresets: () => call<{ presets: Record<string, PresetConfig>; active: string }>("get_presets"),
-  applyPreset: (name: string) => call<{ ok: boolean; active: string }>("apply_preset", name),
-  updateDsp: (opts: Partial<PresetConfig>) => call<void>("update_dsp", opts),
-  resetPreset: (name: string) =>
-    call<{ ok: boolean; presets?: Record<string, PresetConfig>; config?: PresetConfig; error?: string }>("reset_preset", name),
-  createPreset: (name: string, config: PresetConfig) =>
-    call<{ ok: boolean; name?: string; presets?: Record<string, PresetConfig>; error?: string }>("create_preset", name, config),
-  savePreset: (name: string, config: PresetConfig) =>
-    call<{ ok: boolean; presets?: Record<string, PresetConfig>; error?: string }>("save_preset", name, config),
-  deletePreset: (name: string) =>
-    call<{ ok: boolean; presets?: Record<string, PresetConfig>; active?: string; error?: string }>("delete_preset", name),
+  setEngineActive: async (active: boolean) => {
+    if (hasTauri()) return invoke<{ ok: boolean; active: boolean }>("set_engine_active", { active });
+    const py = await waitForPyWebView();
+    return py.set_engine_active(active);
+  },
 
-  getSounds: () => call<Sound[]>("get_sounds"),
-  addSoundFile: () => call<{ ok: boolean; sound?: Sound; cancelled?: boolean; error?: string }>("add_sound_file"),
-  addSoundData: (filename: string, base64Data: string) =>
-    call<{ ok: boolean; sound?: Sound; error?: string }>("add_sound_data", filename, base64Data),
-  playSound: (id: string) => call<void>("play_sound", id),
-  pauseSound: (id: string) => call<void>("pause_sound", id),
-  stopSound: (id: string) => call<void>("stop_sound", id),
-  stopAllSounds: () => call<void>("stop_all_sounds"),
-  getAllProgress: () => call<Record<string, { is_playing: boolean; progress: number }>>("get_all_progress"),
-  updateSound: (id: string, patch: Partial<Pick<Sound, "volume" | "loop" | "hotkey">>) =>
-    call<{ ok: boolean }>("update_sound", id, patch.volume, patch.loop, patch.hotkey),
-  removeSound: (id: string) => call<{ ok: boolean }>("remove_sound", id),
+  setMuted: async (muted: boolean): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_muted", { muted });
+    const py = await waitForPyWebView();
+    return py.set_muted(muted);
+  },
 
-  getAudioDevices: () => call<AudioDevicesState>("get_audio_devices"),
-  setInputDevice: (index: number) => call<void>("set_input_device", index),
-  setMonitorDevice: (index: number | null) => call<void>("set_monitor_device", index),
-  setBufferSize: (size: number) => call<void>("set_buffer_size", size),
-  setMicGain: (gain: number) => call<void>("set_mic_gain", gain),
-  setMonitorGain: (gain: number) => call<void>("set_monitor_gain", gain),
+  setHearMyself: async (enabled: boolean): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_hear_myself", { enabled });
+    const py = await waitForPyWebView();
+    return py.set_hear_myself(enabled);
+  },
 
-  getHotkeyStatus: () => call<HotkeyStatus>("get_hotkey_status"),
-  triggerHotkey: (key: string) => call<{ ok: boolean }>("trigger_hotkey", key),
+  setHearSoundboard: async (enabled: boolean): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_hear_soundboard", { enabled });
+    const py = await waitForPyWebView();
+    return py.set_hear_soundboard(enabled);
+  },
+
+  getMeters: async (): Promise<Meters> => {
+    if (hasTauri()) return invoke<Meters>("get_meters");
+    const py = await waitForPyWebView();
+    return py.get_meters();
+  },
+
+  getPresets: async () => {
+    if (hasTauri()) return invoke<{ presets: Record<string, PresetConfig>; active: string }>("get_presets");
+    const py = await waitForPyWebView();
+    return py.get_presets();
+  },
+
+  applyPreset: async (name: string) => {
+    if (hasTauri()) return invoke<{ ok: boolean; active: string }>("apply_preset", { name });
+    const py = await waitForPyWebView();
+    return py.apply_preset(name);
+  },
+
+  updateDsp: async (opts: Partial<PresetConfig>): Promise<void> => {
+    if (hasTauri()) return invoke<void>("update_dsp", { opts });
+    const py = await waitForPyWebView();
+    return py.update_dsp(opts);
+  },
+
+  resetPreset: async (name: string) => {
+    if (hasTauri()) {
+      return invoke<{ ok: boolean; presets?: Record<string, PresetConfig>; config?: PresetConfig; error?: string }>(
+        "reset_preset",
+        { name }
+      );
+    }
+    const py = await waitForPyWebView();
+    return py.reset_preset(name);
+  },
+
+  createPreset: async (name: string, config: PresetConfig) => {
+    if (hasTauri()) {
+      return invoke<{ ok: boolean; name?: string; presets?: Record<string, PresetConfig>; error?: string }>(
+        "create_preset",
+        { name, config }
+      );
+    }
+    const py = await waitForPyWebView();
+    return py.create_preset(name, config);
+  },
+
+  savePreset: async (name: string, config: PresetConfig) => {
+    if (hasTauri()) {
+      return invoke<{ ok: boolean; presets?: Record<string, PresetConfig>; error?: string }>(
+        "save_preset",
+        { name, config }
+      );
+    }
+    const py = await waitForPyWebView();
+    return py.save_preset(name, config);
+  },
+
+  deletePreset: async (name: string) => {
+    if (hasTauri()) {
+      return invoke<{ ok: boolean; presets?: Record<string, PresetConfig>; active?: string; error?: string }>(
+        "delete_preset",
+        { name }
+      );
+    }
+    const py = await waitForPyWebView();
+    return py.delete_preset(name);
+  },
+
+  getSounds: async (): Promise<Sound[]> => {
+    if (hasTauri()) {
+      const items = await invoke<any[]>("get_sounds");
+      return items.map((s) => ({
+        id: s.id,
+        name: s.name,
+        file_path: s.file_path,
+        volume: s.volume ?? 1.0,
+        loop: s.loop_playback ?? s.loop ?? false,
+        hotkey: s.hotkey ?? "",
+      }));
+    }
+    const py = await waitForPyWebView();
+    return py.get_sounds();
+  },
+
+  addSoundFile: async () => {
+    if (hasTauri()) {
+      const res = await invoke<any>("add_sound_file");
+      if (res.sound) {
+        res.sound.loop = res.sound.loop_playback ?? res.sound.loop ?? false;
+        res.sound.hotkey = res.sound.hotkey ?? "";
+      }
+      return res;
+    }
+    const py = await waitForPyWebView();
+    return py.add_sound_file();
+  },
+
+  addSoundData: async (filename: string, base64Data: string) => {
+    if (hasTauri()) {
+      const res = await invoke<any>("add_sound_data", { filename, base64Data });
+      if (res.sound) {
+        res.sound.loop = res.sound.loop_playback ?? res.sound.loop ?? false;
+        res.sound.hotkey = res.sound.hotkey ?? "";
+      }
+      return res;
+    }
+    const py = await waitForPyWebView();
+    return py.add_sound_data(filename, base64Data);
+  },
+
+  playSound: async (id: string): Promise<void> => {
+    if (hasTauri()) return invoke<void>("play_sound", { id });
+    const py = await waitForPyWebView();
+    return py.play_sound(id);
+  },
+
+  pauseSound: async (id: string): Promise<void> => {
+    if (hasTauri()) return invoke<void>("pause_sound", { id });
+    const py = await waitForPyWebView();
+    return py.pause_sound(id);
+  },
+
+  stopSound: async (id: string): Promise<void> => {
+    if (hasTauri()) return invoke<void>("stop_sound", { id });
+    const py = await waitForPyWebView();
+    return py.stop_sound(id);
+  },
+
+  stopAllSounds: async (): Promise<void> => {
+    if (hasTauri()) return invoke<void>("stop_all_sounds");
+    const py = await waitForPyWebView();
+    return py.stop_all_sounds();
+  },
+
+  getAllProgress: async (): Promise<Record<string, { is_playing: boolean; progress: number }>> => {
+    if (hasTauri()) return invoke<Record<string, { is_playing: boolean; progress: number }>>("get_all_progress");
+    const py = await waitForPyWebView();
+    return py.get_all_progress();
+  },
+
+  updateSound: async (id: string, patch: Partial<Pick<Sound, "volume" | "loop" | "hotkey">>) => {
+    if (hasTauri()) {
+      return invoke<{ ok: boolean }>("update_sound", {
+        id,
+        volume: patch.volume,
+        loopVal: patch.loop,
+        hotkey: patch.hotkey,
+      });
+    }
+    const py = await waitForPyWebView();
+    return py.update_sound(id, patch.volume, patch.loop, patch.hotkey);
+  },
+
+  removeSound: async (id: string) => {
+    if (hasTauri()) return invoke<{ ok: boolean }>("remove_sound", { id });
+    const py = await waitForPyWebView();
+    return py.remove_sound(id);
+  },
+
+  getAudioDevices: async (): Promise<AudioDevicesState> => {
+    if (hasTauri()) return invoke<AudioDevicesState>("get_audio_devices");
+    const py = await waitForPyWebView();
+    return py.get_audio_devices();
+  },
+
+  setInputDevice: async (index: number): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_input_device", { index });
+    const py = await waitForPyWebView();
+    return py.set_input_device(index);
+  },
+
+  setMonitorDevice: async (index: number | null): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_monitor_device", { index });
+    const py = await waitForPyWebView();
+    return py.set_monitor_device(index);
+  },
+
+  setBufferSize: async (size: number): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_buffer_size", { size });
+    const py = await waitForPyWebView();
+    return py.set_buffer_size(size);
+  },
+
+  setMicGain: async (gain: number): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_mic_gain", { gain });
+    const py = await waitForPyWebView();
+    return py.set_mic_gain(gain);
+  },
+
+  setMonitorGain: async (gain: number): Promise<void> => {
+    if (hasTauri()) return invoke<void>("set_monitor_gain", { gain });
+    const py = await waitForPyWebView();
+    return py.set_monitor_gain(gain);
+  },
+
+  getHotkeyStatus: async (): Promise<HotkeyStatus> => {
+    if (hasTauri()) return invoke<HotkeyStatus>("get_hotkey_status");
+    const py = await waitForPyWebView();
+    return py.get_hotkey_status();
+  },
+
+  triggerHotkey: async (key: string) => {
+    if (hasTauri()) return invoke<{ ok: boolean }>("trigger_hotkey", { key });
+    const py = await waitForPyWebView();
+    return py.trigger_hotkey(key);
+  },
 };

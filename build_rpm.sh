@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Audiover RPM Package Builder for Fedora
+# Audiover RPM Package Builder for Fedora / RHEL
+# Builds pure native Rust & React Tauri RPM package
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
@@ -7,11 +8,11 @@ BUILD_DIR="$PROJECT_ROOT/build/rpmbuild"
 DIST_DIR="$PROJECT_ROOT/dist/rpm"
 
 echo "========================================================"
-echo "         Building Audiover RPM for Fedora"
+echo "         Building Audiover RPM (Rust Native)"
 echo "========================================================"
 
 # 1. Check requirements
-for cmd in rpmbuild python3 node npm magick; do
+for cmd in rpmbuild cargo node npm; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "[-] Error: Required tool '$cmd' is not installed."
         exit 1
@@ -27,15 +28,21 @@ fi
 npm run build
 cd "$PROJECT_ROOT"
 
-# 3. Generate Icons if needed
-echo "[+] Step 2: Ensuring application icons are generated..."
+# 3. Build Rust Native Application
+echo "[+] Step 2: Compiling Rust release binary..."
+cd "$PROJECT_ROOT/src"
+cargo build --release
+cd "$PROJECT_ROOT"
+
+# 4. Generate Icons if needed
+echo "[+] Step 3: Ensuring application icons are generated..."
 mkdir -p "$PROJECT_ROOT/assets/icons"
-if [ ! -f "$PROJECT_ROOT/assets/icons/audiover.png" ]; then
+if [ ! -f "$PROJECT_ROOT/assets/icons/audiover.png" ] && command -v magick &>/dev/null; then
     magick "$PROJECT_ROOT/assets/icons/audiover.svg" -background none -resize 256x256 "$PROJECT_ROOT/assets/icons/audiover.png"
 fi
 
-# 4. Prepare RPM build environment
-echo "[+] Step 3: Staging RPM filesystem tree..."
+# 5. Prepare RPM build environment
+echo "[+] Step 4: Staging RPM filesystem tree..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
@@ -48,35 +55,30 @@ STAGING_PIXMAPS="$BUILD_DIR/SOURCES/usr/share/pixmaps"
 
 mkdir -p "$STAGING_OPT" "$STAGING_BIN" "$STAGING_DESKTOP" "$STAGING_ICONS_SVG" "$STAGING_ICONS_PNG" "$STAGING_PIXMAPS"
 
-# Copy app source code, config, assets and UI build
-cp -r "$PROJECT_ROOT/src" "$STAGING_OPT/"
-cp -r "$PROJECT_ROOT/assets" "$STAGING_OPT/"
+# Copy compiled Rust binary and assets to /opt/audiover
+cp "$PROJECT_ROOT/src/target/release/audiover" "$STAGING_OPT/audiover"
+chmod +x "$STAGING_OPT/audiover"
+
+if [ -d "$PROJECT_ROOT/assets" ]; then
+    cp -r "$PROJECT_ROOT/assets" "$STAGING_OPT/"
+fi
+
 if [ -d "$PROJECT_ROOT/config" ]; then
     cp -r "$PROJECT_ROOT/config" "$STAGING_OPT/"
-else
-    mkdir -p "$STAGING_OPT/config"
 fi
-mkdir -p "$STAGING_OPT/ui"
-cp -r "$PROJECT_ROOT/ui/dist" "$STAGING_OPT/ui/"
-cp "$PROJECT_ROOT/requirements.txt" "$STAGING_OPT/"
-
-# 5. Build Python Virtualenv in /opt/audiover/venv
-echo "[+] Step 4: Building isolated Python bundle..."
-python3 -m venv --copies "$STAGING_OPT/venv"
-"$STAGING_OPT/venv/bin/pip" install --upgrade pip
-"$STAGING_OPT/venv/bin/pip" install -r "$PROJECT_ROOT/requirements.txt"
-
-# Fix shebangs in venv to point to generic /usr/bin/env python3 or target /opt/audiover/venv/bin/python3
-find "$STAGING_OPT/venv/bin" -type f -exec sed -i '1s|^#!.*python.*|#!/opt/audiover/venv/bin/python3|' {} + 2>/dev/null || true
 
 # Copy desktop launcher and integration assets
 cp "$PROJECT_ROOT/packaging/bin/audiover" "$STAGING_BIN/audiover"
 chmod +x "$STAGING_BIN/audiover"
 
 cp "$PROJECT_ROOT/packaging/desktop/audiover.desktop" "$STAGING_DESKTOP/audiover.desktop"
-cp "$PROJECT_ROOT/assets/icons/audiover.svg" "$STAGING_ICONS_SVG/audiover.svg"
-cp "$PROJECT_ROOT/assets/icons/audiover.png" "$STAGING_ICONS_PNG/audiover.png"
-cp "$PROJECT_ROOT/assets/icons/audiover.png" "$STAGING_PIXMAPS/audiover.png"
+if [ -f "$PROJECT_ROOT/assets/icons/audiover.svg" ]; then
+    cp "$PROJECT_ROOT/assets/icons/audiover.svg" "$STAGING_ICONS_SVG/audiover.svg"
+fi
+if [ -f "$PROJECT_ROOT/assets/icons/audiover.png" ]; then
+    cp "$PROJECT_ROOT/assets/icons/audiover.png" "$STAGING_ICONS_PNG/audiover.png"
+    cp "$PROJECT_ROOT/assets/icons/audiover.png" "$STAGING_PIXMAPS/audiover.png"
+fi
 
 # Copy spec file
 cp "$PROJECT_ROOT/packaging/rpm/audiover.spec" "$BUILD_DIR/SPECS/audiover.spec"

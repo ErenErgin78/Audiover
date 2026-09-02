@@ -94,9 +94,10 @@ Linux (PipeWire / PulseAudio) için gerçek zamanlı ses dönüştürücü (voic
 - Linux (Fedora, Arch, Ubuntu vb.)
 - PipeWire (`pipewire-pulse`) veya PulseAudio
 - `pulseaudio-utils` (`pactl`), `ffmpeg`
-- Python 3.10+
+- Rust & Cargo (1.75+)
+- Node.js (18+) ve npm
 
-### Kurulum
+### Geliştirme Ortamı Kurulumu
 ```bash
 chmod +x setup_env.sh run.sh
 ./setup_env.sh
@@ -109,9 +110,15 @@ sudo usermod -aG input $USER
 ```
 *(Komutun geçerli olması için oturumu kapatıp yeniden açın).*
 
-### Başlatma
+### Başlatma (Geliştirici Modu)
 ```bash
 ./run.sh
+```
+
+### RPM Paketi Oluşturma
+```bash
+chmod +x build_rpm.sh
+./build_rpm.sh
 ```
 
 ---

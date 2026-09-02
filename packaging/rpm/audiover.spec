@@ -1,24 +1,24 @@
 Name:           audiover
 Version:        1.0.0
-Release:        3%{?dist}
+Release:        1%{?dist}
 Summary:        Real-Time Voice Changer & Soundboard Engine for Linux / PipeWire
 License:        MIT
 URL:            https://github.com/ErenErgin78/Audiover
 BuildArch:      x86_64
 AutoReqProv:    no
-Requires:       pulseaudio-utils, /usr/bin/ffmpeg, zenity, python3
+Requires:       pulseaudio-utils, /usr/bin/ffmpeg, webkit2gtk4.1, alsa-lib
 
 %define debug_package %{nil}
 %define _build_id_links none
 %define __strip /bin/true
 %define __os_install_post %{nil}
 %define __check_files %{nil}
-%define __brp_python_bytecompile %{nil}
 %define _binary_payload w3T0.zstdio
 
 %description
-Audiover is a real-time DSP voice changer and multi-channel soundboard
-engine designed for modern Linux systems running PipeWire / PulseAudio.
+Audiover is a high-performance real-time DSP voice changer and multi-channel
+soundboard engine written in Rust with a React interface, designed for modern
+Linux systems running PipeWire / PulseAudio.
 
 %install
 rm -rf %{buildroot}
@@ -40,9 +40,15 @@ chmod +x %{buildroot}/usr/bin/audiover
 cp -a %{_sourcedir}/usr/share/applications/audiover.desktop %{buildroot}/usr/share/applications/audiover.desktop
 
 # Copy icons
-cp -a %{_sourcedir}/usr/share/icons/hicolor/scalable/apps/audiover.svg %{buildroot}/usr/share/icons/hicolor/scalable/apps/audiover.svg
-cp -a %{_sourcedir}/usr/share/icons/hicolor/256x256/apps/audiover.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/audiover.png
-cp -a %{_sourcedir}/usr/share/pixmaps/audiover.png %{buildroot}/usr/share/pixmaps/audiover.png
+if [ -f "%{_sourcedir}/usr/share/icons/hicolor/scalable/apps/audiover.svg" ]; then
+    cp -a %{_sourcedir}/usr/share/icons/hicolor/scalable/apps/audiover.svg %{buildroot}/usr/share/icons/hicolor/scalable/apps/audiover.svg
+fi
+if [ -f "%{_sourcedir}/usr/share/icons/hicolor/256x256/apps/audiover.png" ]; then
+    cp -a %{_sourcedir}/usr/share/icons/hicolor/256x256/apps/audiover.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/audiover.png
+fi
+if [ -f "%{_sourcedir}/usr/share/pixmaps/audiover.png" ]; then
+    cp -a %{_sourcedir}/usr/share/pixmaps/audiover.png %{buildroot}/usr/share/pixmaps/audiover.png
+fi
 
 %post
 /usr/bin/update-desktop-database &> /dev/null || :
@@ -56,10 +62,9 @@ cp -a %{_sourcedir}/usr/share/pixmaps/audiover.png %{buildroot}/usr/share/pixmap
 /opt/audiover
 /usr/bin/audiover
 /usr/share/applications/audiover.desktop
-/usr/share/icons/hicolor/scalable/apps/audiover.svg
-/usr/share/icons/hicolor/256x256/apps/audiover.png
-/usr/share/pixmaps/audiover.png
+%{_datadir}/icons/hicolor/*/apps/audiover.*
+%{_datadir}/pixmaps/audiover.png
 
 %changelog
-* Sun Aug 16 2026 Eren Ergin <erenergin78@github.com> - 1.0.0-1
-- Initial RPM release for Audiover
+* Wed Sep 02 2026 Eren Ergin <erenergin78@github.com> - 1.0.0-1
+- Complete rewrite in Rust / Tauri with React UI

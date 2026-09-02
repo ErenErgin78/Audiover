@@ -1,73 +1,91 @@
 #!/usr/bin/env bash
-# Audiover - Fedora Voice & Soundboard Engine Setup Script
+# Audiover Development & Environment Setup Script
+# Sets up Rust toolchain, Node.js dependencies, and system libraries for Audiover
 set -e
 
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+cd "$PROJECT_ROOT"
+
 echo "========================================================"
-echo "  Fedora Voice & Soundboard Engine (Audiover) Setup"
+echo "         Audiover Environment Setup (Rust & Tauri)"
 echo "========================================================"
 
-# Check Python version
-PYTHON_BIN=$(which python3 2>/dev/null || true)
-if [ -z "$PYTHON_BIN" ]; then
-    echo "[-] Python3 is not installed. Please install it using: sudo dnf install python3"
+# 1. Detect Package Manager and Distro
+detect_and_install_deps() {
+    if command -v dnf &>/dev/null; then
+        echo "[+] Fedora/RHEL detected (dnf)"
+        echo "[*] Recommended system dependencies: webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ffmpeg"
+        read -p "[?] Would you like to attempt installing system dependencies with sudo dnf? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            sudo dnf install -y webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ffmpeg ImageMagick rpm-build
+        fi
+    elif command -v apt-get &>/dev/null; then
+        echo "[+] Debian/Ubuntu detected (apt)"
+        echo "[*] Recommended system dependencies: libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils ffmpeg"
+        read -p "[?] Would you like to attempt installing system dependencies with sudo apt? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils ffmpeg imagemagick
+        fi
+    elif command -v pacman &>/dev/null; then
+        echo "[+] Arch Linux detected (pacman)"
+        echo "[*] Recommended system dependencies: webkit2gtk-4.1 openssl alsa-lib libpulse ffmpeg"
+        read -p "[?] Would you like to attempt installing system dependencies with sudo pacman? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            sudo pacman -S --needed webkit2gtk-4.1 openssl alsa-lib libpulse ffmpeg imagemagick
+        fi
+    fi
+}
+
+if [[ "$1" == "--install-deps" ]]; then
+    detect_and_install_deps
+fi
+
+# 2. Check Rust & Cargo
+echo "[+] Checking Rust toolchain..."
+if ! command -v cargo &>/dev/null || ! command -v rustc &>/dev/null; then
+    echo "[-] Rust is not installed or not in PATH."
+    echo "    Please install Rust via rustup: https://rustup.rs"
+    echo "    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
     exit 1
 fi
-echo "[+] Detected Python: $($PYTHON_BIN --version)"
+echo "    Rust: $(rustc --version)"
+echo "    Cargo: $(cargo --version)"
 
-# Check pipewire / pactl tools
-if ! command -v pactl &> /dev/null; then
-    echo "[!] pactl not found. Installing pulseaudio-utils..."
-    sudo dnf install -y pulseaudio-utils
-fi
-
-if ! command -v ffmpeg &> /dev/null; then
-    echo "[!] ffmpeg not found. It is recommended for media decoding."
-fi
-
-# Create virtual environment if not exists
-if [ ! -d ".venv" ]; then
-    echo "[+] Creating virtual environment in .venv..."
-    python3 -m venv .venv
-fi
-
-# Activate virtual environment and install requirements
-echo "[+] Installing Python dependencies..."
-source .venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# Create necessary runtime directories
-mkdir -p config assets/sounds
-
-# ── Frontend (React / Vite) ────────────────────────────────────
-echo "[+] Checking Node.js..."
-if ! command -v node &> /dev/null; then
-    echo "[-] Node.js not found. Please install it: sudo dnf install nodejs"
-    echo "    Then re-run this script."
+# 3. Check Node.js & npm
+echo "[+] Checking Node.js & npm..."
+if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
+    echo "[-] Node.js / npm is not installed."
+    echo "    Please install Node.js 18+ (e.g. from your package manager or nvm)."
     exit 1
 fi
-echo "[+] Detected Node: $(node --version)  npm: $(npm --version)"
+echo "    Node: $(node --version)"
+echo "    npm: v$(npm --version)"
 
-echo "[+] Installing frontend dependencies..."
-cd ui && npm install
+# 4. Install Frontend UI Dependencies
+echo "[+] Installing UI dependencies in ui/..."
+cd "$PROJECT_ROOT/ui"
+npm install
+cd "$PROJECT_ROOT"
 
-echo "[+] Building React frontend..."
-npm run build
-cd ..
-echo "[+] Frontend build complete (ui/dist/)"
-# ──────────────────────────────────────────────────────────────
-
-# Check user group for Wayland global hotkeys (/dev/input access)
-if groups | grep -q '\binput\b'; then
-    echo "[+] User is already in the 'input' group. Global evdev hotkeys are enabled!"
-else
-    echo "[!] Notice: For global hotkeys outside the app window on Wayland,"
-    echo "    you can add your user to the 'input' group with:"
-    echo "    sudo usermod -aG input \$USER"
-    echo "    (Requires re-login to take effect)."
+# 5. Check Global Hotkey Permissions (/dev/input)
+echo "[+] Checking input group membership for global hotkeys..."
+if ! groups | grep -q '\binput\b'; then
+    echo "[!] Notice: For global hotkeys (/dev/input) to work without root,"
+    echo "    your user should be added to the 'input' group:"
+    echo "    sudo usermod -aG input $USER"
+    echo "    (Log out and log back in for changes to take effect)."
 fi
 
+# 6. Verify Rust Build
+echo "[+] Checking Rust backend build..."
+cd "$PROJECT_ROOT/src"
+cargo check
+cd "$PROJECT_ROOT"
+
 echo "========================================================"
-echo "  Setup completed successfully!"
-echo "  Run the application with: ./run.sh or source .venv/bin/activate && python3 src/main.py"
+echo "  Setup Complete! Ready to launch Audiover."
+echo "  Run './run.sh' to start development server."
 echo "========================================================"

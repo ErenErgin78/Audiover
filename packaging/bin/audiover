@@ -1,14 +1,12 @@
 #!/usr/bin/env bash
-# Audiover Desktop App Launcher
+# Audiover Desktop App Launcher (Native Rust)
 
 APP_DIR="/opt/audiover"
 
-if [ -f "$APP_DIR/venv/bin/python3" ]; then
-    export PYTHONPATH="$APP_DIR:${PYTHONPATH:-}"
-    exec "$APP_DIR/venv/bin/python3" "$APP_DIR/src/main.py" "$@"
-elif [ -f "$APP_DIR/src/main.py" ]; then
-    export PYTHONPATH="$APP_DIR:${PYTHONPATH:-}"
-    exec python3 "$APP_DIR/src/main.py" "$@"
+if [ -f "$APP_DIR/audiover" ]; then
+    exec "$APP_DIR/audiover" "$@"
+elif command -v /opt/audiover/audiover &>/dev/null; then
+    exec /opt/audiover/audiover "$@"
 else
     echo "Error: Audiover installation not found in $APP_DIR" >&2
     exit 1

@@ -1,41 +1,36 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
+# Rust / Cargo
+target/
+src/target/
+**/*.rs.bk
+Cargo.lock
 
-# C extensions
-*.so
-
-# Virtual Environments
-.venv/
-venv/
-ENV/
-env/
-
-# Python packaging & builds
-build/
-dist/
-*.egg-info/
-*.egg
-.eggs/
-
-# Testing & Coverage
-.pytest_cache/
-.coverage
-htmlcov/
-
-# Node / Frontend (React, Vite, etc.)
+# Node / Frontend (React, Vite, Tauri)
 node_modules/
+ui/node_modules/
+dist/
+ui/dist/
+frontend/dist/
+.vite/
+ui/.vite/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-.vite/
-dist/
-frontend/dist/
-ui/dist/
+*.tsbuildinfo
 
-# IDE / Editors
+# Tauri & Packaging builds
+build/
+*.rpm
+*.deb
+*.AppImage
+
+# Config & local data
+config/settings.json
+tmp/
+temp/
+*.log
+
+# IDE & Editors
 .vscode/
 .idea/
 *.swp
@@ -45,9 +40,3 @@ ui/dist/
 # OS artifacts
 .DS_Store
 Thumbs.db
-
-# Logs & Temporary files
-*.log
-tmp/
-temp/
-config/
