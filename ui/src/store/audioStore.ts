@@ -1,8 +1,11 @@
 import { create } from "zustand";
 import type { AppState, Meters, PresetConfig, Sound } from "../hooks/useApi";
 
+export type PageId = "voice" | "soundboard" | "audio" | "hotkeys" | "settings";
+
 interface AudioStore {
   // ── App State ──
+  language: "tr" | "en";
   engineActive: boolean;
   isMuted: boolean;
   hearMyself: boolean;
@@ -17,13 +20,14 @@ interface AudioStore {
   sounds: Sound[];
 
   // ── Navigation ──
-  activePage: "voice" | "soundboard" | "audio" | "hotkeys";
+  activePage: PageId;
 
   // ── Loaded ──
   initialized: boolean;
 
   // ── Actions ──
   initFromState: (state: AppState) => void;
+  setLanguage: (lang: "tr" | "en") => void;
   setMeters: (m: Meters) => void;
   setEngineActive: (v: boolean) => void;
   setMuted: (v: boolean) => void;
@@ -35,10 +39,11 @@ interface AudioStore {
   setSounds: (s: Sound[]) => void;
   upsertSound: (s: Sound) => void;
   removeSound: (id: string) => void;
-  setActivePage: (p: AudioStore["activePage"]) => void;
+  setActivePage: (p: PageId) => void;
 }
 
 export const useAudioStore = create<AudioStore>((set) => ({
+  language: "tr",
   engineActive: false,
   isMuted: false,
   hearMyself: false,
@@ -52,6 +57,7 @@ export const useAudioStore = create<AudioStore>((set) => ({
 
   initFromState: (state) =>
     set({
+      language: (state.language as "tr" | "en") || "tr",
       engineActive: state.engine_active,
       isMuted: state.is_muted,
       hearMyself: state.hear_myself,
@@ -61,6 +67,7 @@ export const useAudioStore = create<AudioStore>((set) => ({
       initialized: true,
     }),
 
+  setLanguage: (lang) => set({ language: lang }),
   setMeters: (m) => set({ meters: m }),
   setEngineActive: (v) => set({ engineActive: v }),
   setMuted: (v) => set({ isMuted: v }),
@@ -90,3 +97,4 @@ export const useAudioStore = create<AudioStore>((set) => ({
     set((state) => ({ sounds: state.sounds.filter((s) => s.id !== id) })),
   setActivePage: (p) => set({ activePage: p }),
 }));
+

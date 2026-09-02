@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAudioStore } from "../store/audioStore";
 import { api, type Sound } from "../hooks/useApi";
+import { useI18n } from "../hooks/useI18n";
 
 const PROGRESS_INTERVAL_MS = 40;
 
@@ -76,6 +77,7 @@ interface HotkeyModalProps {
 function HotkeyModal({ sound, onClose, onSave }: HotkeyModalProps) {
   const [selectedKey, setSelectedKey] = useState<string>(sound.hotkey || "");
   const [isListening, setIsListening] = useState<boolean>(true);
+  const { t } = useI18n();
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -132,7 +134,7 @@ function HotkeyModal({ sound, onClose, onSave }: HotkeyModalProps) {
         <div className="flex items-center justify-between">
           <div className="flex flex-col min-w-0 pr-2">
             <span style={{ color: "var(--accent)", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>
-              Kısayol Tuşu Ata
+              {t.soundboard.hotkeyModalTitle}
             </span>
             <h2 className="text-sm font-bold text-white truncate" title={sound.name}>
               {sound.name}
@@ -182,10 +184,10 @@ function HotkeyModal({ sound, onClose, onSave }: HotkeyModalProps) {
 
           <div className="text-center">
             <p className="text-xs font-semibold" style={{ color: isListening ? "var(--accent)" : "var(--text)" }}>
-              {isListening ? "Klavyeden tek bir tuşa basın..." : "Tuş seçildi (Değiştirmek için tıkla)"}
+              {isListening ? t.soundboard.pressKeyPrompt : t.soundboard.keySelectedPrompt}
             </p>
             <p className="text-[11px] mt-0.5" style={{ color: "var(--text-muted)" }}>
-              Örn: F1 - F12, 1 - 9, A - Z, SPACE
+              {t.soundboard.keyExamples}
             </p>
           </div>
         </div>
@@ -203,7 +205,7 @@ function HotkeyModal({ sound, onClose, onSave }: HotkeyModalProps) {
                 border: "1px solid rgba(255, 23, 68, 0.3)",
               }}
             >
-              Kaldır
+              {t.soundboard.removeHotkey}
             </button>
           )}
 
@@ -215,7 +217,7 @@ function HotkeyModal({ sound, onClose, onSave }: HotkeyModalProps) {
             className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
             style={{ background: "var(--bg-surface)", color: "var(--text-muted)" }}
           >
-            Vazgeç
+            {t.soundboard.cancel}
           </button>
 
           <button
@@ -229,7 +231,7 @@ function HotkeyModal({ sound, onClose, onSave }: HotkeyModalProps) {
               boxShadow: selectedKey ? "0 0 10px rgba(0, 229, 255, 0.3)" : "none",
             }}
           >
-            Kaydet
+            {t.soundboard.save}
           </button>
         </div>
       </div>
@@ -248,6 +250,8 @@ interface SoundCardProps {
 }
 
 function SoundCard({ sound, progress, isPlaying, onRemove, onUpdate, onAssignHotkey }: SoundCardProps) {
+  const { t } = useI18n();
+
   const handlePlay = () => {
     if (isPlaying) api.pauseSound(sound.id);
     else api.playSound(sound.id);
@@ -279,7 +283,7 @@ function SoundCard({ sound, progress, isPlaying, onRemove, onUpdate, onAssignHot
             color: "var(--accent)",
             fontSize: 11,
           }}
-          title="Kısayol tuşu ata / değiştir"
+          title={t.soundboard.assignHotkey}
         >
           {sound.hotkey || "+ Key"}
         </button>
@@ -312,7 +316,7 @@ function SoundCard({ sound, progress, isPlaying, onRemove, onUpdate, onAssignHot
             color: "#000",
           }}
         >
-          {isPlaying ? "⏸ Pause" : "▶ Play"}
+          {isPlaying ? t.soundboard.pause : t.soundboard.play}
         </button>
         <button
           onClick={handleStop}
@@ -328,11 +332,11 @@ function SoundCard({ sound, progress, isPlaying, onRemove, onUpdate, onAssignHot
             onChange={(e) => onUpdate(sound.id, { loop: e.target.checked })}
             className="accent-[var(--accent)] cursor-pointer"
           />
-          Loop
+          {t.soundboard.loop}
         </label>
         <button
           onClick={() => {
-            if (confirm(`'${sound.name}' silinsin mi?`)) onRemove(sound.id);
+            if (confirm(`'${sound.name}' ${t.soundboard.confirmDeleteSound}`)) onRemove(sound.id);
           }}
           className="ml-auto text-sm cursor-pointer"
           style={{ color: "var(--red)", background: "transparent", border: "none" }}
@@ -343,7 +347,7 @@ function SoundCard({ sound, progress, isPlaying, onRemove, onUpdate, onAssignHot
 
       {/* Volume Slider */}
       <div className="flex items-center gap-2">
-        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>Vol</span>
+        <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{t.soundboard.vol}</span>
         <input
           type="range"
           min={0}
@@ -376,6 +380,7 @@ export default function SoundboardPage() {
   const setSounds = useAudioStore((s) => s.setSounds);
   const upsertSound = useAudioStore((s) => s.upsertSound);
   const removeSound = useAudioStore((s) => s.removeSound);
+  const { t } = useI18n();
 
   const [search, setSearch] = useState("");
   const [progress, setProgress] = useState<Record<string, { is_playing: boolean; progress: number }>>({});
@@ -500,10 +505,10 @@ export default function SoundboardPage() {
           >
             <span className="text-5xl animate-bounce">📥</span>
             <p className="text-base font-bold text-white tracking-wide">
-              Ses Dosyalarını Buraya Bırakın
+              {t.soundboard.dropOverlayTitle}
             </p>
             <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-              MP3, WAV, OGG, FLAC, AAC, MP4 vb. desteklenir
+              {t.soundboard.dropOverlaySub}
             </p>
           </div>
         </div>
@@ -519,21 +524,21 @@ export default function SoundboardPage() {
             color: "#fff",
           }}
         >
-          ➕ Ses Dosyası Ekle
+          {t.soundboard.addSound}
         </button>
         <button
           onClick={() => api.stopAllSounds()}
           className="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer transition-opacity hover:opacity-90"
           style={{ background: "var(--red)", color: "#fff" }}
         >
-          ⏹ TÜM SESLERİ DURDUR
+          {t.soundboard.stopAll}
         </button>
         <div className="flex-1" />
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="🔍 Ses ara..."
+          placeholder={t.soundboard.searchPlaceholder}
           className="px-3 py-2 rounded-lg text-xs"
           style={{
             background: "var(--bg-surface)",
@@ -552,7 +557,8 @@ export default function SoundboardPage() {
           style={{ color: "var(--text-muted)" }}
         >
           <span style={{ fontSize: 40 }}>🔊</span>
-          <p className="text-sm">Henüz ses yok. Yukarıdan dosya ekle.</p>
+          <p className="text-sm font-semibold">{t.soundboard.noSounds}</p>
+          <p className="text-xs">{t.soundboard.noSoundsSub}</p>
         </div>
       ) : (
         <div

@@ -1,17 +1,14 @@
 import { useState, useCallback } from "react";
 import { useAudioStore } from "../store/audioStore";
 import { api, type PresetConfig } from "../hooks/useApi";
+import { useI18n } from "../hooks/useI18n";
 
 const DEFAULT_PRESET_NAMES = ["Clean", "Deep Voice"];
 
-const PRESET_META: Record<string, { icon: string; desc: string }> = {
-  Clean:        { icon: "🎙", desc: "Natural Microphone" },
-  "Deep Voice": { icon: "🔊", desc: "Deep Studio Bass" },
+const PRESET_META: Record<string, { icon: string; descKey?: "clean" | "deep" }> = {
+  Clean:        { icon: "🎙", descKey: "clean" },
+  "Deep Voice": { icon: "🔊", descKey: "deep" },
 };
-
-function getPresetMeta(name: string) {
-  return PRESET_META[name] ?? { icon: "★", desc: "Custom Preset" };
-}
 
 /* ── DSP Slider Row ──────────────────────────────────────────── */
 interface SliderRowProps {
@@ -30,7 +27,7 @@ function SliderRow({ label, value, min, max, step = 1, format, onChange, enabled
   return (
     <div className="flex items-center gap-2.5">
       {onToggle !== undefined ? (
-        <label className="flex items-center gap-2 cursor-pointer shrink-0" style={{ width: 125 }}>
+        <label className="flex items-center gap-2 cursor-pointer shrink-0" style={{ width: 135 }}>
           <input
             type="checkbox"
             checked={enabled ?? false}
@@ -44,7 +41,7 @@ function SliderRow({ label, value, min, max, step = 1, format, onChange, enabled
       ) : (
         <span
           className="shrink-0 truncate"
-          style={{ color: "var(--text-muted)", fontSize: 12, width: 125 }}
+          style={{ color: "var(--text-muted)", fontSize: 12, width: 135 }}
           title={label}
         >
           {label}
@@ -95,26 +92,27 @@ interface DspDrawerProps {
 }
 
 function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, onReset }: DspDrawerProps) {
+  const { t } = useI18n();
   const isBuiltin = DEFAULT_PRESET_NAMES.includes(activePreset);
 
   const handleDelete = () => {
-    if (!isBuiltin && confirm(`'${activePreset}' silinsin mi?`)) onDelete(activePreset);
+    if (!isBuiltin && confirm(`'${activePreset}' ${t.voice.confirmDelete}`)) onDelete(activePreset);
   };
 
   const handleReset = () => {
-    if (isBuiltin && confirm(`'${activePreset}' ayarları varsayılana sıfırlansın mı?`)) onReset(activePreset);
+    if (isBuiltin && confirm(`'${activePreset}' ${t.voice.confirmReset}`)) onReset(activePreset);
   };
 
   return (
     <div
       className="flex flex-col h-full shrink-0"
       style={{
-        width: 380,
+        width: 390,
         borderLeft: "1px solid var(--border)",
         background: "#12141F",
       }}
     >
-      {/* Drawer Header: Geri + Preset adı (salt okunur) + Eylem butonları */}
+      {/* Drawer Header: Geri + Preset adı + Eylem butonları */}
       <div
         className="flex items-center gap-2 px-4 py-3 shrink-0"
         style={{ borderBottom: "1px solid var(--border)" }}
@@ -124,17 +122,17 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
           className="text-sm font-semibold px-3 py-1.5 rounded-lg shrink-0 cursor-pointer transition-colors"
           style={{ background: "var(--bg-surface)", color: "var(--text)" }}
         >
-          ← Geri
+          {t.voice.back}
         </button>
 
-        {/* Aktif preset adı — başlık */}
+        {/* Aktif preset adı */}
         <div className="flex-1 min-w-0 px-1">
-          <div style={{ color: "var(--text-muted)", fontSize: 10, marginBottom: 1 }}>Düzenleniyor</div>
+          <div style={{ color: "var(--text-muted)", fontSize: 10, marginBottom: 1 }}>{t.voice.editing}</div>
           <div className="truncate font-bold" style={{ color: "var(--accent)", fontSize: 14 }}>
             {activePreset}
             {isBuiltin && (
               <span style={{ color: "var(--text-muted)", fontWeight: 400, fontSize: 11, marginLeft: 6 }}>
-                (varsayılan)
+                {t.voice.defaultBadge}
               </span>
             )}
           </div>
@@ -145,25 +143,25 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
           className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
           style={{ background: "#1A2738", color: "var(--accent)", border: "1px solid var(--accent)" }}
         >
-          + Yeni
+          {t.voice.newPreset}
         </button>
         {isBuiltin ? (
           <button
             onClick={handleReset}
-            title="Varsayılan ayarlara sıfırla"
+            title="Reset"
             className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
             style={{ background: "var(--bg-surface)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
           >
-            ↺ Sıfırla
+            {t.voice.reset}
           </button>
         ) : (
           <button
             onClick={handleDelete}
-            title={`'${activePreset}' sil`}
+            title="Delete"
             className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
             style={{ background: "#2D1A24", color: "var(--red)", border: "1px solid #5A2030" }}
           >
-            🗑 Sil
+            {t.voice.delete}
           </button>
         )}
       </div>
@@ -179,13 +177,13 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
             className="w-4 h-4 accent-[var(--accent)]"
           />
           <span className="text-sm" style={{ color: "var(--text-muted)" }}>
-            Bypass — Tüm efektleri devre dışı bırak
+            {t.voice.bypass}
           </span>
         </label>
 
-        <DspSection title="Pitch Shifter">
+        <DspSection title={t.voice.pitchShifter}>
           <SliderRow
-            label="Pitch Shift"
+            label={t.voice.pitchShift}
             value={Math.round((dsp.pitch ?? 0) * 10)}
             min={-120} max={120}
             format={(v) => `${v >= 0 ? "+" : ""}${(v / 10).toFixed(1)} st`}
@@ -193,9 +191,9 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
           />
         </DspSection>
 
-        <DspSection title="Robotic & Ring Modulation">
+        <DspSection title={t.voice.robotic}>
           <SliderRow
-            label="Robotic Mod."
+            label={t.voice.roboticMod}
             value={dsp.robot ? 1 : 0} min={0} max={1}
             format={() => ""}
             onChange={() => {}}
@@ -203,20 +201,20 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
             onToggle={(v) => onDspChange({ robot: v })}
           />
           <SliderRow
-            label="Mod. Frekans"
+            label={t.voice.modFreq}
             value={dsp.rfreq ?? 150} min={50} max={500}
             format={(v) => `${v} Hz`}
             onChange={(v) => onDspChange({ rfreq: v })}
           />
           <SliderRow
-            label="Robot Mix"
+            label={t.voice.robotMix}
             value={Math.round((dsp.rmix ?? 0) * 100)} min={0} max={100}
             format={(v) => `${v}%`}
             onChange={(v) => onDspChange({ rmix: v / 100 })}
           />
         </DspSection>
 
-        <DspSection title="Spatial & Filter Effects">
+        <DspSection title={t.voice.spatial}>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -224,10 +222,10 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
               onChange={(e) => onDspChange({ radio: e.target.checked })}
               className="w-4 h-4 accent-[var(--accent)]"
             />
-            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Walkie-Talkie Radio</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{t.voice.walkieTalkie}</span>
           </label>
           <SliderRow
-            label="Distortion"
+            label={t.voice.distortion}
             value={Math.round((dsp.drive ?? 0) * 100)} min={0} max={100}
             format={(v) => `${v}%`}
             onChange={(v) => onDspChange({ drive: v / 100 })}
@@ -235,7 +233,7 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
             onToggle={(v) => onDspChange({ dist: v })}
           />
           <SliderRow
-            label="Cathedral Reverb"
+            label={t.voice.reverb}
             value={Math.round((dsp.rwet ?? 0) * 100)} min={0} max={100}
             format={(v) => `${v}%`}
             onChange={(v) => onDspChange({ rwet: v / 100 })}
@@ -243,7 +241,7 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
             onToggle={(v) => onDspChange({ rev: v })}
           />
           <SliderRow
-            label="Spatial Chorus"
+            label={t.voice.chorus}
             value={Math.round((dsp.cdepth ?? 0) * 100)} min={0} max={100}
             format={(v) => `${v}%`}
             onChange={(v) => onDspChange({ cdepth: v / 100 })}
@@ -251,7 +249,7 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
             onToggle={(v) => onDspChange({ chorus: v })}
           />
           <SliderRow
-            label="Noise Gate (dB)"
+            label={t.voice.noiseGate}
             value={dsp.gate_db ?? -65} min={-80} max={-30}
             format={(v) => `${v} dB`}
             onChange={(v) => onDspChange({ gate_db: v })}
@@ -271,17 +269,13 @@ export default function VoicePage() {
   const setActivePreset = useAudioStore((s) => s.setActivePreset);
   const setPresets = useAudioStore((s) => s.setPresets);
   const updatePreset = useAudioStore((s) => s.updatePreset);
+  const { t } = useI18n();
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [dsp, setDsp] = useState<PresetConfig>(
     () => presets[activePreset] ?? presets["Clean"] ?? ({} as PresetConfig)
   );
 
-  /**
-   * Preset kartına tıklayınca:
-   * 1. Preset uygulanır (DSP motoru güncellenir)
-   * 2. Drawer otomatik açılır ve o presetin güncel ayarları yüklenir
-   */
   const handlePresetClick = async (name: string) => {
     const res = await api.applyPreset(name);
     if (res.ok) {
@@ -302,7 +296,7 @@ export default function VoicePage() {
   );
 
   const handleNewPreset = async () => {
-    const name = prompt("Yeni preset adı:");
+    const name = prompt(t.voice.newPresetPrompt);
     if (!name?.trim()) return;
     const res = await api.createPreset(name.trim(), dsp);
     if (res.ok && res.presets) {
@@ -347,13 +341,13 @@ export default function VoicePage() {
         {/* Başlık */}
         <div>
           <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
-            Voice Presets
+            {t.voice.title}
           </h1>
           <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 2 }}>
-            Bir preset seç — ayarları sağda otomatik açılır
+            {t.voice.subtitle}
             {drawerOpen && (
               <span style={{ color: "var(--text)" }}>
-                {" "}· Aktif:{" "}
+                {" "}· {t.voice.active}:{" "}
                 <strong style={{ color: "var(--accent)" }}>{activePreset}</strong>
               </span>
             )}
@@ -366,14 +360,14 @@ export default function VoicePage() {
           style={{ gridTemplateColumns: `repeat(${cols}, 220px)` }}
         >
           {presetList.map((name) => {
-            const { icon, desc } = getPresetMeta(name);
+            const meta = PRESET_META[name] ?? { icon: "★" };
             const isActive = name === activePreset;
             const isEditing = isActive && drawerOpen;
             return (
               <button
                 key={name}
                 onClick={() => handlePresetClick(name)}
-                className="flex flex-col items-center justify-center gap-1.5 rounded-2xl transition-all"
+                className="flex flex-col items-center justify-center gap-1.5 rounded-2xl transition-all cursor-pointer"
                 style={{
                   width: 220,
                   height: 130,
@@ -381,11 +375,10 @@ export default function VoicePage() {
                     ? "linear-gradient(135deg, var(--accent2), var(--accent))"
                     : "var(--bg-card)",
                   border: `2px solid ${isEditing ? "#fff" : isActive ? "var(--accent)" : "var(--border)"}`,
-                  cursor: "pointer",
                   boxShadow: isActive ? "0 0 20px rgba(0,229,255,0.18)" : undefined,
                 }}
               >
-                <span style={{ fontSize: 26 }}>{icon}</span>
+                <span style={{ fontSize: 26 }}>{meta.icon}</span>
                 <span style={{ fontWeight: 900, fontSize: 16, color: "#fff" }}>{name}</span>
                 <span
                   style={{
@@ -393,7 +386,7 @@ export default function VoicePage() {
                     color: isActive ? "rgba(255,255,255,0.75)" : "var(--text-muted)",
                   }}
                 >
-                  {isEditing ? "✎ Düzenleniyor" : desc}
+                  {isEditing ? `✎ ${t.voice.editing}` : name}
                 </span>
               </button>
             );
@@ -416,3 +409,4 @@ export default function VoicePage() {
     </div>
   );
 }
+

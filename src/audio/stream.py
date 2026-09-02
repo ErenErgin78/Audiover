@@ -26,7 +26,7 @@ class AudioStreamEngine:
         self.sample_rate = sample_rate
         self.block_size = block_size
 
-        # Device selections (index or name)
+        # Device selections (index)
         self.input_device: Optional[int] = None
         self.virtual_sink_device: Optional[int] = None
         self.monitor_device: Optional[int] = None
@@ -53,7 +53,7 @@ class AudioStreamEngine:
         self._virt_out_stream: Optional[sd.OutputStream] = None
         self._mon_out_stream: Optional[sd.OutputStream] = None
 
-        # Thread-safe queues for cross-stream output (larger size with drop-oldest strategy)
+        # Thread-safe queues for cross-stream output
         self._virt_queue = queue.Queue(maxsize=32)
         self._mon_queue = queue.Queue(maxsize=32)
 
@@ -65,15 +65,30 @@ class AudioStreamEngine:
             Callable[[float, float, float, float], None]
         ] = None
 
+    @staticmethod
+    def get_device_name(device_index: Optional[int]) -> Optional[str]:
+        """Gets device name from its index."""
+        if device_index is None:
+            return None
+        try:
+            dev = sd.query_devices(device_index)
+            return dev.get("name")
+        except Exception:
+            return None
+
     def find_virtual_sink_index(
         self,
         sink_name: str = "Audiover_Sink",
         sink_desc: str = "Audiover_Virtual_Sink",
     ) -> Optional[int]:
         """Finds the sounddevice device index corresponding to the virtual null sink."""
-        devices = sd.query_devices()
+        try:
+            devices = sd.query_devices()
+        except Exception as e:
+            logger.error(f"Error querying audio devices: {e}")
+            return None
 
-        # 1. Primary search: exact or description match on Sink, strictly excluding Mic / Microphone
+        # 1. Primary search: exact or description match on Sink, excluding Mic / Source
         for idx, dev in enumerate(devices):
             d_name = dev.get("name", "")
             d_lower = d_name.lower()
@@ -81,7 +96,7 @@ class AudioStreamEngine:
                 (
                     sink_name.lower() in d_lower
                     or sink_desc.lower() in d_lower
-                    or "virtual_sink" in d_lower
+                    or "audiover_sink" in d_lower
                 )
                 and "mic" not in d_lower
                 and "source" not in d_lower
@@ -107,85 +122,114 @@ class AudioStreamEngine:
                 )
                 return idx
 
-        logger.warning(
-            "Could not find Audiover virtual sink device in sounddevice!"
-        )
+        logger.warning("Audiover virtual sink device not detected in sounddevice.")
         return None
 
-    def find_physical_input_device(self) -> Optional[int]:
-        """Finds the default physical microphone, explicitly ignoring virtual/generic devices."""
-        devices = sd.query_devices()
+    def resolve_input_device(self, saved_name: Optional[str] = None) -> Optional[int]:
+        """
+        Resolves input device:
+        1. Matches by saved_name if provided and exists.
+        2. Fallbacks to sounddevice system default input device.
+        3. Fallbacks to the first non-virtual input device.
+        """
+        try:
+            devices = sd.query_devices()
+        except Exception as e:
+            logger.error(f"Error querying devices for input: {e}")
+            return None
 
-        # 1. Look for physical hardware input device (JACK or ALSA card, excluding virtuals and monitors)
-        for idx, dev in enumerate(devices):
-            d_name = dev.get("name", "")
-            d_lower = d_name.lower()
-            if dev.get("max_input_channels", 0) > 0:
-                if any(
-                    k in d_lower
-                    for k in [
-                        "audiover",
-                        "default",
-                        "sysdefault",
-                        "pipewire",
-                        "monitor",
-                        "brave",
-                        "chromium",
-                    ]
-                ):
-                    continue
-                logger.info(
-                    f"Auto-detected physical input device: [{idx}] {d_name}"
-                )
-                return idx
+        # 1. Saved device name lookup
+        if saved_name:
+            clean_saved = saved_name.strip().lower()
+            for idx, dev in enumerate(devices):
+                if dev.get("max_input_channels", 0) > 0:
+                    d_name = dev.get("name", "").lower()
+                    if clean_saved == d_name or clean_saved in d_name:
+                        if "audiover" not in d_name:
+                            logger.info(
+                                f"Restored saved input device: [{idx}] {dev.get('name')}"
+                            )
+                            return idx
 
-        # 2. Fallback to sounddevice default device if non-virtual
-        default_in = sd.default.device[0]
-        if default_in >= 0 and default_in < len(devices):
-            d_name = devices[default_in].get("name", "").lower()
-            if "audiover" not in d_name:
-                return default_in
-
-        return None
-
-    def find_default_output_device(self) -> Optional[int]:
-        """Finds the default physical speaker / headphone output device."""
-        devices = sd.query_devices()
-
-        # 1. First prioritize physical analog stereo or headphones (excluding HDMI and Audiover)
-        for idx, dev in enumerate(devices):
-            d_name = dev.get("name", "").lower()
-            if dev.get("max_output_channels", 0) > 0:
-                if any(
-                    k in d_name
-                    for k in [
-                        "audiover",
-                        "hdmi",
-                        "sysdefault",
-                        "monitor",
-                        "brave",
-                        "chromium",
-                    ]
-                ):
-                    continue
-                if any(k in d_name for k in ["analog", "yerleşik", "speaker", "headphone", "headphones"]):
+        # 2. System default input device
+        try:
+            default_in = sd.default.device[0]
+            if 0 <= default_in < len(devices):
+                dev = devices[default_in]
+                d_name = dev.get("name", "").lower()
+                if dev.get("max_input_channels", 0) > 0 and "audiover" not in d_name:
                     logger.info(
-                        f"Found physical analog monitor output: [{idx}] {dev['name']}"
+                        f"Using system default input device: [{default_in}] {dev.get('name')}"
+                    )
+                    return default_in
+        except Exception as e:
+            logger.debug(f"Default input device query failed: {e}")
+
+        # 3. First non-virtual input device
+        for idx, dev in enumerate(devices):
+            if dev.get("max_input_channels", 0) > 0:
+                d_name = dev.get("name", "").lower()
+                if "audiover" not in d_name:
+                    logger.info(
+                        f"Fallback selected input device: [{idx}] {dev.get('name')}"
                     )
                     return idx
 
-        # 2. Fallback to default output device if non-HDMI and non-virtual
-        default_out = sd.default.device[1]
-        if default_out >= 0 and default_out < len(devices):
-            d_name = devices[default_out].get("name", "").lower()
-            if "audiover" not in d_name and "hdmi" not in d_name:
-                return default_out
+        return None
 
-        # 3. Last resort: any non-HDMI output device
+    def resolve_monitor_device(self, saved_name: Optional[str] = None) -> Optional[int]:
+        """
+        Resolves monitor (headphones / speaker) output device:
+        1. If saved_name is explicitly "none" or disabled, returns None.
+        2. Matches by saved_name if provided.
+        3. Fallbacks to sounddevice system default output device.
+        4. Fallbacks to the first non-virtual output device.
+        """
+        if saved_name == "none":
+            return None
+
+        try:
+            devices = sd.query_devices()
+        except Exception as e:
+            logger.error(f"Error querying devices for monitor: {e}")
+            return None
+
+        # 1. Saved device name lookup
+        if saved_name:
+            clean_saved = saved_name.strip().lower()
+            for idx, dev in enumerate(devices):
+                if dev.get("max_output_channels", 0) > 0:
+                    d_name = dev.get("name", "").lower()
+                    if clean_saved == d_name or clean_saved in d_name:
+                        if "audiover" not in d_name:
+                            logger.info(
+                                f"Restored saved monitor device: [{idx}] {dev.get('name')}"
+                            )
+                            return idx
+
+        # 2. System default output device
+        try:
+            default_out = sd.default.device[1]
+            if 0 <= default_out < len(devices):
+                dev = devices[default_out]
+                d_name = dev.get("name", "").lower()
+                if dev.get("max_output_channels", 0) > 0 and "audiover" not in d_name:
+                    logger.info(
+                        f"Using system default output device: [{default_out}] {dev.get('name')}"
+                    )
+                    return default_out
+        except Exception as e:
+            logger.debug(f"Default output device query failed: {e}")
+
+        # 3. First non-virtual output device
         for idx, dev in enumerate(devices):
-            d_name = dev.get("name", "").lower()
-            if dev.get("max_output_channels", 0) > 0 and "hdmi" not in d_name and "audiover" not in d_name:
-                return idx
+            if dev.get("max_output_channels", 0) > 0:
+                d_name = dev.get("name", "").lower()
+                if "audiover" not in d_name:
+                    logger.info(
+                        f"Fallback selected monitor device: [{idx}] {dev.get('name')}"
+                    )
+                    return idx
 
         return None
 
@@ -206,7 +250,7 @@ class AudioStreamEngine:
 
                 if self._mon_out_stream is None:
                     if self.monitor_device is None:
-                        self.monitor_device = self.find_default_output_device()
+                        self.monitor_device = self.resolve_monitor_device()
                     if self.monitor_device is not None:
                         try:
                             self._mon_out_stream = sd.OutputStream(
@@ -245,15 +289,15 @@ class AudioStreamEngine:
                             self.find_virtual_sink_index()
                         )
 
-                # Ensure physical input device is explicitly set (prevent loopback to virtual mic)
+                # Ensure physical input device is explicitly resolved
                 if self.input_device is None:
-                    self.input_device = self.find_physical_input_device()
+                    self.input_device = self.resolve_input_device()
 
-                # Ensure monitor output device is set
+                # Ensure monitor output device is resolved
                 if self.monitor_device is None:
-                    self.monitor_device = self.find_default_output_device()
+                    self.monitor_device = self.resolve_monitor_device()
 
-                # Clear and pre-buffer queues with 2 blocks of silence to avoid startup starvation
+                # Clear and pre-buffer queues with 2 blocks of silence
                 while not self._virt_queue.empty():
                     self._virt_queue.get_nowait()
                 while not self._mon_queue.empty():
@@ -266,19 +310,24 @@ class AudioStreamEngine:
 
                 # 1. Virtual Sink Output Stream (Feeds Virtual Mic)
                 if self.virtual_sink_device is not None:
-                    self._virt_out_stream = sd.OutputStream(
-                        device=self.virtual_sink_device,
-                        channels=2,
-                        samplerate=self.sample_rate,
-                        blocksize=self.block_size,
-                        dtype="float32",
-                        latency="low",
-                        callback=self._virt_out_callback,
-                    )
-                    self._virt_out_stream.start()
-                    logger.info(
-                        f"Started Virtual Sink Output Stream on device {self.virtual_sink_device}"
-                    )
+                    try:
+                        self._virt_out_stream = sd.OutputStream(
+                            device=self.virtual_sink_device,
+                            channels=2,
+                            samplerate=self.sample_rate,
+                            blocksize=self.block_size,
+                            dtype="float32",
+                            latency="low",
+                            callback=self._virt_out_callback,
+                        )
+                        self._virt_out_stream.start()
+                        logger.info(
+                            f"Started Virtual Sink Output Stream on device {self.virtual_sink_device}"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Could not open virtual sink stream on device {self.virtual_sink_device}: {e}"
+                        )
                 else:
                     logger.warning(
                         "No virtual sink device found! Output won't reach virtual mic."
@@ -306,19 +355,22 @@ class AudioStreamEngine:
                         )
 
                 # 3. Input Microphone Stream
-                self._in_stream = sd.InputStream(
-                    device=self.input_device,
-                    channels=1,
-                    samplerate=self.sample_rate,
-                    blocksize=self.block_size,
-                    dtype="float32",
-                    latency="low",
-                    callback=self._input_callback,
-                )
-                self._in_stream.start()
-                logger.info(
-                    f"Started Input Stream on device {self.input_device if self.input_device is not None else 'default'}"
-                )
+                if self.input_device is not None:
+                    self._in_stream = sd.InputStream(
+                        device=self.input_device,
+                        channels=1,
+                        samplerate=self.sample_rate,
+                        blocksize=self.block_size,
+                        dtype="float32",
+                        latency="low",
+                        callback=self._input_callback,
+                    )
+                    self._in_stream.start()
+                    logger.info(
+                        f"Started Input Stream on device {self.input_device}"
+                    )
+                else:
+                    logger.warning("No input microphone device found to open.")
 
                 self.is_running = True
                 return True

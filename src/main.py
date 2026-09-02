@@ -100,6 +100,19 @@ def main():
     )
     sb_manager.load_from_config()
 
+    # Read persistent audio & app settings if present
+    saved_audio_cfg = {}
+    if os.path.exists(config_path):
+        try:
+            import json
+            with open(config_path, "r", encoding="utf-8") as f:
+                settings_data = json.load(f)
+                saved_audio_cfg = settings_data.get("audio", {})
+        except Exception as e:
+            logger.debug(f"Could not load initial audio settings: {e}")
+
+    block_size = int(saved_audio_cfg.get("block_size", block_size))
+
     # 4. Initialize Real-Time Audio Streaming Engine
     stream_engine = AudioStreamEngine(
         dsp=dsp,
@@ -107,6 +120,14 @@ def main():
         sample_rate=sample_rate,
         block_size=block_size,
     )
+
+    # Apply saved audio configurations
+    stream_engine.mic_gain = float(saved_audio_cfg.get("mic_gain", 1.0))
+    stream_engine.monitor_gain = float(saved_audio_cfg.get("monitor_gain", 1.0))
+    stream_engine.hear_myself = bool(saved_audio_cfg.get("hear_myself", False))
+    stream_engine.hear_soundboard = bool(saved_audio_cfg.get("hear_soundboard", True))
+    stream_engine.input_device = stream_engine.resolve_input_device(saved_audio_cfg.get("input_device_name"))
+    stream_engine.monitor_device = stream_engine.resolve_monitor_device(saved_audio_cfg.get("monitor_device_name"))
 
     # 5. Initialize Global Hotkey System
     hotkey_mgr = HotkeyManager()

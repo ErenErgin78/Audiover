@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../hooks/useApi";
+import { useI18n } from "../hooks/useI18n";
 
 interface HotkeyStatus {
   has_permission: boolean;
@@ -8,6 +9,7 @@ interface HotkeyStatus {
 
 export default function HotkeysPage() {
   const [status, setStatus] = useState<HotkeyStatus | null>(null);
+  const { t } = useI18n();
 
   useEffect(() => {
     api.getHotkeyStatus().then(setStatus);
@@ -16,15 +18,23 @@ export default function HotkeysPage() {
   if (!status) {
     return (
       <div className="flex items-center justify-center h-full" style={{ color: "var(--text-muted)" }}>
-        Yükleniyor...
+        {t.hotkeys.loading}
       </div>
     );
   }
 
+  const getActionLabel = (action: string) => {
+    if (action.includes("Mute")) return t.hotkeys.muteMicAction;
+    if (action.includes("Bypass")) return t.hotkeys.bypassDspAction;
+    if (action.includes("Stop")) return t.hotkeys.stopAllAction;
+    if (action.includes("Hear")) return t.hotkeys.toggleHearMyselfAction;
+    return action;
+  };
+
   return (
-    <div className="flex flex-col gap-4 p-6 overflow-y-auto">
+    <div className="flex flex-col gap-4 p-6 overflow-y-auto max-w-4xl">
       <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
-        Global Hotkeys
+        {t.hotkeys.title}
       </h1>
 
       {/* Permission Status */}
@@ -33,25 +43,25 @@ export default function HotkeysPage() {
         style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
       >
         <h2 style={{ color: "var(--accent)", fontWeight: 700, fontSize: 13, marginBottom: 10 }}>
-          Wayland & Linux Global Shortcut Status
+          {t.hotkeys.statusCard}
         </h2>
         {status.has_permission ? (
           <div>
             <p style={{ color: "var(--green)", fontWeight: 700, fontSize: 13 }}>
-              ✓ Global Input Access Active (/dev/input)
+              {t.hotkeys.statusActive}
             </p>
             <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-              Hotkeys oyun, Discord ve arka planda çalışan pencerelerde aktif.
+              {t.hotkeys.statusActiveDesc}
             </p>
           </div>
         ) : (
           <div className="flex flex-col gap-2">
             <p style={{ color: "var(--yellow)", fontWeight: 700, fontSize: 13 }}>
-              ⚠ /dev/input Erişimi Bulunamadı
+              {t.hotkeys.statusInactive}
             </p>
             <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
-              Wayland'da arka plan kısayolları için kullanıcını{" "}
-              <code style={{ color: "var(--accent)" }}>input</code> grubuna ekle:
+              {t.hotkeys.statusInactiveDesc}{" "}
+              <code style={{ color: "var(--accent)" }}>input</code>:
             </p>
             <code
               className="px-3 py-2 rounded-lg text-xs"
@@ -60,7 +70,7 @@ export default function HotkeysPage() {
               sudo usermod -aG input $USER
             </code>
             <p style={{ color: "var(--text-muted)", fontSize: 11 }}>
-              (Komuttan sonra oturumu bir kez kapat/aç)
+              {t.hotkeys.statusHelp}
             </p>
           </div>
         )}
@@ -78,16 +88,16 @@ export default function HotkeysPage() {
             borderBottom: "1px solid var(--border)", margin: 0,
           }}
         >
-          Global Action Shortcuts
+          {t.hotkeys.actionShortcutsCard}
         </h2>
         <table className="w-full text-sm">
           <thead>
             <tr style={{ borderBottom: "1px solid var(--border)" }}>
               <th className="px-4 py-2 text-left" style={{ color: "var(--text-muted)", fontWeight: 600 }}>
-                Eylem
+                {t.hotkeys.actionHeader}
               </th>
               <th className="px-4 py-2 text-center" style={{ color: "var(--text-muted)", fontWeight: 600, width: 120 }}>
-                Tuş
+                {t.hotkeys.keyHeader}
               </th>
             </tr>
           </thead>
@@ -97,7 +107,7 @@ export default function HotkeysPage() {
                 key={i}
                 style={{ borderBottom: i < status.hotkeys.length - 1 ? "1px solid var(--border)" : undefined }}
               >
-                <td className="px-4 py-3" style={{ color: "var(--text)" }}>{hk.action}</td>
+                <td className="px-4 py-3" style={{ color: "var(--text)" }}>{getActionLabel(hk.action)}</td>
                 <td className="px-4 py-3 text-center">
                   <kbd
                     className="px-2 py-1 rounded text-xs font-mono font-bold"
@@ -115,7 +125,7 @@ export default function HotkeysPage() {
           </tbody>
         </table>
         <p className="px-4 py-3 text-xs" style={{ color: "var(--text-muted)" }}>
-          Soundboard ses tuşları her ses kartında ayrıca atanabilir.
+          {t.hotkeys.soundboardNote}
         </p>
       </section>
     </div>

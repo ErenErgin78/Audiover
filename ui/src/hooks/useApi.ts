@@ -82,6 +82,7 @@ export interface AppState {
   active_preset: string;
   presets: Record<string, PresetConfig>;
   hotkey_permission: boolean;
+  language?: "tr" | "en";
 }
 
 export interface PresetConfig {
@@ -138,6 +139,7 @@ export interface AudioDevicesState {
 
 export const api = {
   getState: () => call<AppState>("get_state"),
+  setLanguage: (lang: string) => call<{ ok: boolean; language: string }>("set_language", lang),
   setEngineActive: (active: boolean) => call<{ ok: boolean; active: boolean }>("set_engine_active", active),
   setMuted: (muted: boolean) => call<void>("set_muted", muted),
   setHearMyself: (enabled: boolean) => call<void>("set_hear_myself", enabled),

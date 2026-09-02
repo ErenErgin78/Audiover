@@ -1,12 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type AudioDevicesState } from "../hooks/useApi";
-
-const BUFFER_OPTIONS = [
-  { label: "128 samples (~2.7 ms)", value: 128 },
-  { label: "256 samples (~5.3 ms) [Önerilen]", value: 256 },
-  { label: "512 samples (~10.7 ms)", value: 512 },
-  { label: "1024 samples (~21.3 ms)", value: 1024 },
-];
+import { useI18n } from "../hooks/useI18n";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -48,6 +42,14 @@ function SliderWithLabel({ value, min, max, onChange, format }: {
 
 export default function AudioSettingsPage() {
   const [devState, setDevState] = useState<AudioDevicesState | null>(null);
+  const { t } = useI18n();
+
+  const bufferOptions = [
+    { label: `128 samples (~2.7 ms)`, value: 128 },
+    { label: `256 samples (~5.3 ms) [${t.audio.recommended}]`, value: 256 },
+    { label: `512 samples (~10.7 ms)`, value: 512 },
+    { label: `1024 samples (~21.3 ms)`, value: 1024 },
+  ];
 
   const load = async () => {
     const d = await api.getAudioDevices();
@@ -59,7 +61,7 @@ export default function AudioSettingsPage() {
   if (!devState) {
     return (
       <div className="flex items-center justify-center h-full" style={{ color: "var(--text-muted)" }}>
-        Yükleniyor...
+        {t.audio.loading}
       </div>
     );
   }
@@ -94,14 +96,14 @@ export default function AudioSettingsPage() {
   } as React.CSSProperties;
 
   return (
-    <div className="flex flex-col gap-4 p-6 overflow-y-auto">
+    <div className="flex flex-col gap-4 p-6 overflow-y-auto max-w-4xl">
       <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
-        Audio & Routing
+        {t.audio.title}
       </h1>
 
       {/* Device Selection */}
-      <Card title="Audio Devices & Hardware I/O">
-        <Row label="Fiziksel Mikrofon Girişi:">
+      <Card title={t.audio.hardwareCard}>
+        <Row label={t.audio.inputLabel}>
           <select
             value={devState.current_input ?? ""}
             onChange={(e) => handleInputChange(e.target.value)}
@@ -114,13 +116,13 @@ export default function AudioSettingsPage() {
             ))}
           </select>
         </Row>
-        <Row label="Kulaklık / Monitör Çıkışı:">
+        <Row label={t.audio.monitorLabel}>
           <select
             value={devState.current_monitor ?? "null"}
             onChange={(e) => handleMonitorChange(e.target.value)}
             style={selectStyle}
           >
-            <option value="null">Devre Dışı / Yok</option>
+            <option value="null">{t.audio.noneDisabled}</option>
             {devState.outputs.map((d) => (
               <option key={d.index} value={d.index}>
                 [{d.index}] {d.name}{d.is_default ? " (Default)" : ""}
@@ -130,44 +132,43 @@ export default function AudioSettingsPage() {
         </Row>
         <button
           onClick={load}
-          className="self-start px-4 py-1.5 rounded-lg text-xs font-semibold"
+          className="self-start px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", color: "var(--text)" }}
         >
-          🔄 Cihazları Yenile
+          {t.audio.refreshDevices}
         </button>
       </Card>
 
       {/* PipeWire Status */}
-      <Card title="PipeWire Virtual Audio Routing">
+      <Card title={t.audio.routingCard}>
         <div style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1.8 }}>
           <div>
-            <strong style={{ color: "var(--text)" }}>Sanal Sink:</strong>{" "}
+            <strong style={{ color: "var(--text)" }}>{t.audio.virtualSink}</strong>{" "}
             <code style={{ color: "var(--accent)", background: "var(--bg-surface)", padding: "1px 6px", borderRadius: 4 }}>
               Audiover_Sink
             </code>
           </div>
           <div>
-            <strong style={{ color: "var(--text)" }}>Sanal Mikrofon:</strong>{" "}
+            <strong style={{ color: "var(--text)" }}>{t.audio.virtualMic}</strong>{" "}
             <code style={{ color: "var(--accent)", background: "var(--bg-surface)", padding: "1px 6px", borderRadius: 4 }}>
               Audiover_Virtual_Microphone
             </code>
           </div>
           <div style={{ marginTop: 6 }}>
-            Discord, OBS, oyunlarda mikrofon olarak{" "}
-            <strong>Audiover_Virtual_Microphone</strong>'ı seç.
+            {t.audio.routingHelp}
           </div>
         </div>
       </Card>
 
       {/* Latency */}
-      <Card title="Latency & Performance">
-        <Row label="Buffer Size (Frames):">
+      <Card title={t.audio.latencyCard}>
+        <Row label={t.audio.bufferSize}>
           <select
             value={devState.block_size}
             onChange={(e) => handleBufferChange(e.target.value)}
             style={selectStyle}
           >
-            {BUFFER_OPTIONS.map((o) => (
+            {bufferOptions.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -175,8 +176,8 @@ export default function AudioSettingsPage() {
       </Card>
 
       {/* Audio Levels */}
-      <Card title="Audio Levels & Monitoring">
-        <Row label="Hear Myself (Loopback):">
+      <Card title={t.audio.levelsCard}>
+        <Row label={t.audio.hearMyselfLabel}>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -187,10 +188,10 @@ export default function AudioSettingsPage() {
               }}
               className="w-4 h-4 accent-[var(--accent)]"
             />
-            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Kendi sesini kulaklıktan duy</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{t.audio.hearMyselfLabel}</span>
           </label>
         </Row>
-        <Row label="Hear Soundboard:">
+        <Row label={t.audio.hearSoundboardLabel}>
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -201,10 +202,10 @@ export default function AudioSettingsPage() {
               }}
               className="w-4 h-4 accent-[var(--accent)]"
             />
-            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>Soundboard seslerini kulaklıktan duy</span>
+            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{t.audio.hearSoundboardLabel}</span>
           </label>
         </Row>
-        <Row label="Mikrofon Girişi Ses:">
+        <Row label={t.audio.micGainLabel}>
           <SliderWithLabel
             value={Math.round(devState.mic_gain * 100)} min={0} max={200}
             format={(v) => `${v}%`}
@@ -215,7 +216,7 @@ export default function AudioSettingsPage() {
             }}
           />
         </Row>
-        <Row label="Kulaklık Monitör Ses:">
+        <Row label={t.audio.monitorGainLabel}>
           <SliderWithLabel
             value={Math.round(devState.monitor_gain * 100)} min={0} max={200}
             format={(v) => `${v}%`}

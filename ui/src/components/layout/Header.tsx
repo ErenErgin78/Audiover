@@ -1,5 +1,6 @@
 import { useAudioStore } from "../../store/audioStore";
 import { api } from "../../hooks/useApi";
+import { useI18n } from "../../hooks/useI18n";
 import clsx from "clsx";
 
 /** VU Meter bar — scaleX animasyonlu, tek kanal */
@@ -26,6 +27,7 @@ export default function Header() {
   const setEngineActive = useAudioStore((s) => s.setEngineActive);
   const setMuted = useAudioStore((s) => s.setMuted);
   const setHearMyself = useAudioStore((s) => s.setHearMyself);
+  const { t } = useI18n();
 
   const handleEngineToggle = async () => {
     const res = await api.setEngineActive(!engineActive);
@@ -72,7 +74,7 @@ export default function Header() {
       <button
         onClick={handleEngineToggle}
         className={clsx(
-          "px-4 py-1.5 rounded-lg text-xs font-bold transition-colors",
+          "px-4 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer",
           engineActive
             ? "text-black"
             : "text-white"
@@ -81,14 +83,14 @@ export default function Header() {
           background: engineActive ? "var(--green)" : "var(--red)",
         }}
       >
-        {engineActive ? "● ENGINE ACTIVE" : "○ ENGINE STOPPED"}
+        {engineActive ? t.header.engineActive : t.header.engineStopped}
       </button>
 
       {/* Mute Mic */}
       <button
         onClick={handleMuteToggle}
         className={clsx(
-          "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
+          "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer",
           isMuted
             ? "text-white border-red-500"
             : "border-[var(--border-hover)] text-[var(--text)]"
@@ -97,14 +99,14 @@ export default function Header() {
           background: isMuted ? "var(--red)" : "var(--bg-surface)",
         }}
       >
-        {isMuted ? "🔇 Muted" : "🎙 Mute Mic"}
+        {isMuted ? t.header.muted : t.header.muteMic}
       </button>
 
       {/* Hear Myself */}
       <button
         onClick={handleHearMyselfToggle}
         className={clsx(
-          "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors",
+          "px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer",
           hearMyself
             ? "text-white border-purple-400"
             : "border-[var(--border-hover)] text-[var(--text)]"
@@ -113,17 +115,17 @@ export default function Header() {
           background: hearMyself ? "var(--accent2)" : "var(--bg-surface)",
         }}
       >
-        🎧 Hear Myself
+        {t.header.hearMyself}
       </button>
 
       {/* VU Meters */}
       <div className="flex flex-col gap-1">
         <div className="flex items-center gap-2">
-          <span style={{ color: "var(--text-muted)", fontSize: 10, width: 22 }}>IN</span>
+          <span style={{ color: "var(--text-muted)", fontSize: 10, width: 26 }}>{t.header.in}</span>
           <VUBar peak={meters.in_peak} />
         </div>
         <div className="flex items-center gap-2">
-          <span style={{ color: "var(--text-muted)", fontSize: 10, width: 22 }}>OUT</span>
+          <span style={{ color: "var(--text-muted)", fontSize: 10, width: 26 }}>{t.header.out}</span>
           <VUBar peak={meters.out_peak} />
         </div>
       </div>
