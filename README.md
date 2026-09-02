@@ -1,194 +1,145 @@
-# Audiover — Fedora Real-Time Voice Changer & Soundboard Engine
+# Audiover
 
-**Audiover**, modern Linux sistemleri (özellikle **Fedora**, **PipeWire / WirePlumber** ve **Wayland**) için geliştirilmiş, profesyonel kalitede, ultra düşük gecikmeli (<10ms) gerçek zamanlı ses dönüştürücü (**Voice Changer**) ve çok kanallı ses tahtası (**Soundboard**) uygulamasıdır.
-
-Mikrofon sesinizi anında tanınmaz hale getirebilir, stüdyo kalitesinde ses efektleri (DSP) uygulayabilir ve oyun oynarken veya Discord / OBS / Telegram üzerinden sohbet ederken ses ve video kliplerini tek tuşla karşı tarafa iletebilirsiniz.
+Linux (PipeWire / PulseAudio) için gerçek zamanlı ses dönüştürücü (voice changer) ve ses tahtası (soundboard) uygulaması.
 
 ---
 
-## 🌟 Öne Çıkan Özellikler
+## Özellikler
 
-### 1. 🎙 Gerçek Zamanlı DSP Ses Dönüştürücü (Voice Changer)
-* **Granular Pitch Shifting:** Çift gecikmeli dairesel tampon (dual-delay circular buffer) ve Hann pencereli granül sentezi ile anlık ses kalınlaştırma (-12 semiton) veya inceltme (+12 semiton).
-* **Cyborg / Robot:** Ayarlanabilir taşıyıcı frekansı (50 Hz - 600 Hz) ve miks oranı ile ring modülasyonu.
-* **Walkie-Talkie & Telsiz:** 2. derece Butterworth bandpass filtreleme (300 Hz – 3400 Hz) ve harmonik distorsiyon saturasyonu.
-* **Distortion & Drive:** Hiperbolik tanjant (`tanh`) tabanlı yumuşak analog doygunluk ve zenginleştirme.
-* **Schroeder Reverb:** 4 paralel tarak filtre (comb filter) ve 2 seri tüm-geçiren (all-pass) difüzör ile katedral yankı etkisi.
-* **Spatial Chorus:** LFO modülasyonlu gecikme çizgisi ile uzamsal koro efekti.
-* **Akıllı Noise Gate:** Konuşma başlangıcında hızlı açılan (attack), bitişinde doğal sönen (release) yumuşak geçişli (soft-knee) gürültü kapısı.
-* **Ses Ön Ayarları (Presets):** Ana ekranda büyük ve merkezi kartlar şeklinde **Clean** ve **Deep Voice** hızlı geçiş seçenekleri.
-* **Özel DSP & Ön Ayar Ayarları (⚙ Settings):** Sağ üstteki ayarlar butonu ile açılan özel sayfadan yeni preset ekleme, silme ve tüm master DSP kontrollerini (Pitch, Ring Modülasyonu, Filtre, Distorsiyon, Reverb, Chorus, Noise Gate) gerçek zamanlı olarak yapılandırma.
-* **Bypass Modu:** Tek tuşla tüm efektleri atlayıp ham mikrofona dönme.
+### Ses Dönüştürücü (DSP)
+- **Pitch Shifter:** Granüler sentez ile perde kaydırma (-12 / +12 semiton).
+- **Robot / Ring Modulator:** Taşıyıcı frekansı ayarlanabilir ring modülasyonu (50 Hz - 600 Hz).
+- **Telsiz Filtresi:** 2. derece Butterworth bandpass filtre (300 Hz – 3400 Hz) ve harmonik distorsiyon.
+- **Distortion:** Tanjant hiperbolik (`tanh`) tabanlı analog doygunluk.
+- **Reverb:** 4 paralel tarak ve 2 tüm-geçiren filtreli Schroeder yankı efekti.
+- **Chorus:** LFO modülasyonlu uzamsal gecikme efekti.
+- **Noise Gate:** Yumuşak geçişli (soft-knee) gürültü kapısı.
+- **Ön Ayarlar ve DSP Ayarları:** Hazır ve özel efekt profilleri oluşturma ve düzenleme.
+- **Bypass:** Efekt zincirini devre dışı bırakıp ham mikrofon sesine dönme.
 
-### 2. 🎵 Çok Kanallı Ses Tahtası (Soundboard)
-* **Geniş Format Desteği:** `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.mp4` (video dosyalarının yalnızca ses akışını anında ayrıştırır).
-* **Doğrudan RAM'den Oynatma:** Tüm sesler belleğe 48 kHz 32-bit float stereo formatında yüklenir; disk gecikmesi olmadan sıfır tepki süresiyle tetiklenir.
-* **Kanal Başına Kontrol:** Her ses için bağımsız ses düzeyi (Volume), döngü (Loop), ilerleme çubuğu (Progress bar) ve durdurma kontrolü.
-* **Panik Butonu (Stop All Sounds):** Çalan tüm sesleri tek tuşla (`F11`) anında susturma.
+### Soundboard
+- **Format Desteği:** `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.mp4` (yalnızca ses akışı).
+- **Bellek Üzerinden Oynatma:** Sesler RAM'e 48 kHz 32-bit float stereo olarak yüklenir ve gecikmesiz tetiklenir.
+- **Kanal Kontrolleri:** Bağımsız ses seviyesi, döngü (loop) ve durdurma kontrolleri.
+- **Toplu Durdurma:** Çalan tüm sesleri tek tuşla durdurma.
 
-### 3. 🔀 PipeWire / PulseAudio Akıllı Sanal Ses Yönlendirme
-* **Otomatik Sanal Cihaz Yönetimi:** Uygulama açılışında `Audiover_Sink` (Sanal Çıkış) ve `Audiover_Mic` (`module-remap-source`) oluşturur.
-* **Uygulama İzolasyonu:** Discord, OBS Studio, Steam veya oyunlarda mikrofon olarak **"Audiover_Virtual_Microphone"** seçildiğinde, dönüştürülen sesiniz ve soundboard efektleri mikslenerek temiz şekilde karşıya aktarılır.
-* **Geri Bildirim Koruması:** Fiziksel mikrofon ile sanal aygıtlar filtrelenir; döngü (loopback feedback) oluşması engellenir.
-* **Otomatik Temizleme (Graceful Cleanup):** Uygulama kapandığında oluşturulan sanal modüller sistemden otomatik olarak kaldırılır.
+### Sanal Ses Yönlendirme (PipeWire / PulseAudio)
+- **Sanal Aygıt Yönetimi:** `Audiover_Sink` ve `Audiover_Mic` (`module-remap-source`) aygıtları ile otomatik miks yönetimi.
+- **Uygulama Entegrasyonu:** Discord, OBS Studio, Steam ve oyunlara dönüştürülmüş mikrofon ve ses tahtası çıkışını aktarma.
+- **Geri Bildirim Koruması:** Fiziksel ve sanal aygıtlar arasında döngü (loopback) oluşmasını engelleme.
+- **Otomatik Temizleme:** Uygulama kapandığında oluşturulan sanal modülleri sistemden kaldırma.
 
-### 4. 🎧 Canlı İzleme (Monitoring / Hear Myself)
-* **Hear Myself (`F8`):** Kendi dönüştürülmüş sesinizi gecikmesiz olarak kulaklığınızdan duyabilirsiniz.
-* **Hear Soundboard:** Tetiklediğiniz ses efektlerinin kulaklığınıza da verilmesini açıp kapatabilirsiniz.
-* Bağımsız monitör ses kazancı (Monitor Gain) ayarı.
-
-### 5. ⌨ Global Kısayol Tuşları (Wayland / X11)
-* Oyun oynarken veya tam ekran pencerelerdeyken uygulama arka planda olsa bile çalışan `/dev/input` donanım seviyesi olay dinleyicisi.
-* Mikrofonu susturma (`F9`), Efektleri kapatma (`F10`), Tüm sesleri durdurma (`F11`) ve özel ses tuşları.
+### Canlı Dinleme ve Giriş Yönetimi
+- **Canlı Dinleme (Hear Myself):** Dönüştürülen ses ve soundboard çıkışını kulaklıktan dinleme.
+- **Global Kısayollar:** Wayland ve X11 ortamlarında `/dev/input` üzerinden arka planda kısayol desteği.
 
 ---
 
-## 🛠 Teknik Mimari ve Çalışma Prensibi
-
-Audiover, yüksek performanslı Python bilimsel kütüphaneleri (`numpy`, `scipy`), `sounddevice` (PortAudio/PipeWire) ve `PyQt6` üzerine inşa edilmiştir.
+## Mimari
 
 ```
-                      ┌───────────────────────────────┐
-                      │    Fiziksel Mikrofon (I/O)    │
-                      └──────────────┬────────────────┘
-                                     │ (48kHz Float32 Block)
-                                     ▼
-                      ┌───────────────────────────────┐
-                      │    DSP Ses İşleme Zinciri     │
-                      │  - Noise Gate (Soft Knee)     │
-                      │  - Granular Pitch Shifter     │
-                      │  - Ring Modulator / Robot     │
-                      │  - Butterworth Bandpass       │
-                      │  - Saturation / Distortion    │
-                      │  - Schroeder Reverb & Chorus  │
-                      └──────────────┬────────────────┘
-                                     │
- ┌─────────────────────────┐         │ (İşlenmiş Ses)
- │   Soundboard Engine     │         │
- │ (RAM 48kHz Stereo Mix)  ├─────────┼──────────────────────────────┐
- └───────────┬─────────────┘         │                              │
-             │ (SFX Audio)           ▼                              ▼
-             │                ┌──────────────┐              ┌──────────────┐
-             └───────────────►│ Master Mixer │              │ Monitor Mix  │
-                              │  + Limiter   │              │  + Gain Adj. │
-                              └──────┬───────┘              └──────┬───────┘
-                                     │                             │
-                                     ▼                             ▼
-                      ┌───────────────────────────────┐     ┌──────────────┐
-                      │    Audiover_Sink (Null Sink)  │     │   Kulaklık   │
-                      └──────────────┬────────────────┘     │   (Monitor)  │
-                                     │                      └──────────────┘
-                                     ▼
-                      ┌───────────────────────────────┐
-                      │ Audiover_Virtual_Microphone   │
-                      │    (module-remap-source)      │
-                      └──────────────┬────────────────┘
-                                     │
-                        ┌────────────┴────────────┐
-                        ▼                         ▼
-                 [Discord / OBS]          [Oyunlar / Steam]
+                  ┌─────────────────────────────┐
+                  │       Fiziksel Mikrofon     │
+                  └──────────────┬──────────────┘
+                                 │ (48kHz Float32)
+                                 ▼
+                  ┌─────────────────────────────┐
+                  │    DSP Efekt Zinciri        │
+                  │  - Noise Gate               │
+                  │  - Pitch Shifter            │
+                  │  - Ring Modulator           │
+                  │  - Bandpass Filter          │
+                  │  - Distortion / Saturator   │
+                  │  - Schroeder Reverb / Chorus│
+                  └──────────────┬──────────────┘
+                                 │
+┌───────────────────────┐        │ (İşlenmiş Ses)
+│   Soundboard Motoru   │        │
+│   (RAM 48kHz Stereo)  ├────────┼────────────────────────────┐
+└───────────┬───────────┘        │                            │
+            │ (SFX)              ▼                            ▼
+            │             ┌──────────────┐             ┌──────────────┐
+            └────────────►│ Master Mikser│             │ Monitör      │
+                          │  + Limiter   │             │ (Kulaklık)   │
+                          └──────┬───────┘             └──────────────┘
+                                 │
+                                 ▼
+                  ┌─────────────────────────────┐
+                  │  Audiover_Sink (Null Sink)  │
+                  └──────────────┬──────────────┘
+                                 │
+                                 ▼
+                  ┌─────────────────────────────┐
+                  │ Audiover_Virtual_Microphone │
+                  │    (module-remap-source)    │
+                  └──────────────┬──────────────┘
+                                 │
+                    ┌────────────┴────────────┐
+                    ▼                         ▼
+             [Discord / OBS]          [Oyunlar / Diğer]
 ```
 
 ### Teknik Parametreler
-* **Örnekleme Hızı (Sample Rate):** 48,000 Hz (Stüdyo standardı).
-* **Blok Boyutu (Block Size):** 256 frames (~5.33 ms donanım tampon gecikmesi).
-* **Dahili Format:** Tek ve çift kanallı 32-bit kayan nokta (`float32`, [-1.0, 1.0]).
-* **Kırpılma Koruması (Clipping Prevention):** Master çıkışta hiperbolik tanjant yumuşak sınırlayıcı (soft limiter).
-* **Girdi İşleme (Input Event):** Linux `/dev/input/event*` standart `struct input_event` (24-byte `llHHI` formatı) ile Wayland compositor kısıtlamalarına takılmayan global kısayol takibi.
+- **Örnekleme Hızı:** 48.000 Hz
+- **Blok Boyutu:** 256 frame (~5.33 ms gecikme)
+- **Ses Formatı:** 32-bit float (`float32`, [-1.0, 1.0])
+- **Kırpılma Koruması:** Master çıkışta yumuşak sınırlayıcı (soft limiter)
+- **Girdi Takibi:** Linux `/dev/input/event*` standardı ile global kısayol takibi
 
 ---
 
-## 📁 Proje Dizin Yapısı
+## Kurulum ve Çalıştırma
 
-```text
-Audiover/
-├── assets/
-│   └── sounds/                # Örnek ses efektleri (.wav, .mp3)
-├── config/
-│   └── settings.json          # Kayıtlı ayarlar, ses kütüphanesi ve kısayollar
-├── src/
-│   ├── main.py                # Ana uygulama başlatıcı ve yaşam döngüsü
-│   ├── audio/
-│   │   ├── dsp.py             # Düşük gecikmeli DSP efekt zinciri ve algoritmaları
-│   │   ├── router.py          # PipeWire/PulseAudio sanal sink & source yöneticisi
-│   │   └── stream.py          # Çok kanallı gerçek zamanlı I/O ve mikser motoru
-│   ├── soundboard/
-│   │   ├── player.py          # RAM içi çözücü (decoding), oynatıcı ve mikser
-│   │   └── manager.py         # Ses kütüphanesi ve JSON kalıcılık yönetimi
-│   ├── input/
-│   │   └── hotkeys.py         # Wayland (evdev) / Linux ham girdi kısayol yöneticisi
-│   └── ui/
-│       ├── main_window.py     # PyQt6 ana pencere ve canlı VU metreler
-│       ├── voice_panel.py     # DSP efekt kartları, slider'lar ve ön ayarlar
-│       ├── soundboard_panel.py# Ses ızgarası, ilerleme çubukları ve medya yükleyici
-│       ├── audio_settings_panel.py # Cihaz seçimi, gecikme ve kazanç ayarları
-│       ├── hotkeys_panel.py   # Global kısayol tuşu atama arayüzü
-│       └── styles.py          # Modern Dark / Neon siberpunk QSS teması
-├── requirements.txt           # Python bağımlılıkları
-├── setup_env.sh               # Otomatik sanal ortam ve bağımlılık kurulum scripti
-├── run.sh                     # Uygulama başlatma scripti
-└── README.md
-```
+### Gereksinimler
+- Linux (Fedora, Arch, Ubuntu vb.)
+- PipeWire (`pipewire-pulse`) veya PulseAudio
+- `pulseaudio-utils` (`pactl`), `ffmpeg`
+- Python 3.10+
 
----
-
-## 🚀 Kurulum ve Başlangıç
-
-### Sistem Gereksinimleri
-* **İşletim Sistemi:** Linux (Fedora 38/39/40+, Arch, Ubuntu 22.04+ vb.)
-* **Ses Sunucusu:** PipeWire (`pipewire-pulse`) veya PulseAudio
-* **Gerekli Sistem Araçları:** `pulseaudio-utils` (`pactl`), `ffmpeg`
-* **Python:** Python 3.10 veya üzeri
-
-### 1. Kurulum
-Proje kök dizininde kurulum scriptini çalıştırın:
+### Kurulum
 ```bash
 chmod +x setup_env.sh run.sh
 ./setup_env.sh
 ```
-*Bu script sanal ortamı (`.venv`) oluşturur ve `requirements.txt` içerisindeki tüm kütüphaneleri (PyQt6, sounddevice, scipy, numpy, soundfile, miniaudio vb.) yükler.*
 
-### 2. Wayland Global Kısayol İzni (Opsiyonel ama Önerilen)
-Wayland üzerinde oyunlardayken global kısayolların `/dev/input` üzerinden dinlenebilmesi için kullanıcınızın `input` grubunda olması gerekir:
+### Global Kısayol İzni (Opsiyonel)
+Wayland üzerinde global kısayolların `/dev/input` üzerinden dinlenebilmesi için kullanıcının `input` grubunda olması gerekir:
 ```bash
 sudo usermod -aG input $USER
 ```
-*(Komutu çalıştırdıktan sonra oturumu bir kez kapatıp açmanız yeterlidir).*
+*(Komutun geçerli olması için oturumu kapatıp yeniden açın).*
 
-### 3. Uygulamayı Başlatma
+### Başlatma
 ```bash
 ./run.sh
 ```
-*(Veya doğrudan: `.venv/bin/python src/main.py`)*
 
 ---
 
-## 🎙 Discord, OBS ve Oyun Yapılandırması
+## Ses Yapılandırması
 
-1. **Audiover** uygulamasını açın ve **ENGINE ACTIVE** durumunda olduğunu teyit edin.
-2. **Discord** (veya oyun içi ses ayarları):
-   * **Giriş Aygıtı (Input Device):** `Audiover_Virtual_Microphone` (veya `Audiover_Mic`)
-   * **Çıkış Aygıtı (Output Device):** Fiziksel Kulaklığınız
-3. **OBS Studio:**
-   * Ses Giriş Yakalayıcısı (Mic/Aux) olarak `Audiover_Virtual_Microphone` seçin.
+1. Audiover uygulamasını başlatın.
+2. Hedef uygulamada (Discord, OBS Studio vb.) mikrofon / giriş aygıtı olarak **Audiover_Virtual_Microphone** (veya `Audiover_Mic`) seçin.
+3. Çıkış aygıtı olarak kulaklığınızı seçin.
 
 ---
 
-## ⌨ Varsayılan Global Kısayollar
+## Varsayılan Kısayollar
 
 | Tuş | Eylem |
 |---|---|
-| `F8` | **Hear Myself (Loopback):** Kendi sesini dinlemeyi aç / kapat |
-| `F9` | **Mute:** Mikrofonu anında sustur / aç |
-| `F10` | **Bypass DSP:** Efektleri devre dışı bırak / etkinleştir |
-| `F11` | **Panic Button:** Çalan tüm soundboard seslerini anında sustur |
-| `1` | Airhorn SFX Çal |
-| `2` | Level Up Chime Çal |
-| `3` | Cyber Alert SFX Çal |
+| `F8` | Canlı dinleme (Hear Myself) aç / kapat |
+| `F9` | Mikrofonu sustur (Mute) / aç |
+| `F10` | DSP efektlerini devre dışı bırak (Bypass) / etkinleştir |
+| `F11` | Çalan tüm soundboard seslerini durdur |
+| `1` | Airhorn |
+| `2` | Level Up |
+| `3` | Cyber Alert |
 
-*Tüm kısayollar Audiover arayüzündeki **Hotkeys** sekmesinden özelleştirilebilir.*
+*Kısayollar uygulama arayüzünden özelleştirilebilir.*
 
 ---
 
-## 📄 Lisans
-Bu proje açık kaynaklıdır ve MIT Lisansı altında sunulmaktadır.
+## Lisans
+
+MIT
