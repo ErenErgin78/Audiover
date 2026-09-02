@@ -78,22 +78,20 @@ interface DspDrawerProps {
   onDspChange: (patch: Partial<PresetConfig>) => void;
   onClose: () => void;
   activePreset: string;
-  presets: Record<string, PresetConfig>;
-  onSave: (name: string) => void;
-  onNew: (name: string) => void;
+  onNew: () => void;
   onDelete: (name: string) => void;
+  onReset: (name: string) => void;
 }
 
-function DspDrawer({ dsp, onDspChange, onClose, activePreset, onSave, onNew, onDelete }: DspDrawerProps) {
+function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, onReset }: DspDrawerProps) {
   const isBuiltin = DEFAULT_PRESET_NAMES.includes(activePreset);
-
-  const handleNew = async () => {
-    const name = prompt("Yeni preset adı:");
-    if (name?.trim()) onNew(name.trim());
-  };
 
   const handleDelete = () => {
     if (!isBuiltin && confirm(`'${activePreset}' silinsin mi?`)) onDelete(activePreset);
+  };
+
+  const handleReset = () => {
+    if (isBuiltin && confirm(`'${activePreset}' ayarları varsayılana sıfırlansın mı?`)) onReset(activePreset);
   };
 
   return (
@@ -112,13 +110,13 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onSave, onNew, onD
       >
         <button
           onClick={onClose}
-          className="text-sm font-semibold px-3 py-1.5 rounded-lg shrink-0"
+          className="text-sm font-semibold px-3 py-1.5 rounded-lg shrink-0 cursor-pointer transition-colors"
           style={{ background: "var(--bg-surface)", color: "var(--text)" }}
         >
           ← Geri
         </button>
 
-        {/* Aktif preset adı — dropdown yok, sadece başlık */}
+        {/* Aktif preset adı — başlık */}
         <div className="flex-1 min-w-0 px-1">
           <div style={{ color: "var(--text-muted)", fontSize: 10, marginBottom: 1 }}>Düzenleniyor</div>
           <div className="truncate font-bold" style={{ color: "var(--accent)", fontSize: 14 }}>
@@ -132,30 +130,31 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onSave, onNew, onD
         </div>
 
         <button
-          onClick={handleNew}
-          className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0"
+          onClick={onNew}
+          className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
           style={{ background: "#1A2738", color: "var(--accent)", border: "1px solid var(--accent)" }}
         >
           + Yeni
         </button>
-        <button
-          onClick={() => onSave(activePreset)}
-          disabled={isBuiltin}
-          title={isBuiltin ? "Varsayılan preset değiştirilemez" : "Mevcut ayarları kaydet"}
-          className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 disabled:opacity-40"
-          style={{ background: "var(--accent2)", color: "#fff" }}
-        >
-          💾
-        </button>
-        <button
-          onClick={handleDelete}
-          disabled={isBuiltin}
-          title={isBuiltin ? "Varsayılan preset silinemez" : `'${activePreset}' sil`}
-          className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 disabled:opacity-30"
-          style={{ background: "#2D1A24", color: "var(--red)", border: "1px solid #5A2030" }}
-        >
-          🗑
-        </button>
+        {isBuiltin ? (
+          <button
+            onClick={handleReset}
+            title="Varsayılan ayarlara sıfırla"
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
+            style={{ background: "var(--bg-surface)", color: "var(--text-muted)", border: "1px solid var(--border)" }}
+          >
+            ↺ Sıfırla
+          </button>
+        ) : (
+          <button
+            onClick={handleDelete}
+            title={`'${activePreset}' sil`}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-opacity hover:opacity-90"
+            style={{ background: "#2D1A24", color: "var(--red)", border: "1px solid #5A2030" }}
+          >
+            🗑 Sil
+          </button>
+        )}
       </div>
 
       {/* DSP Controls */}
@@ -260,6 +259,7 @@ export default function VoicePage() {
   const presets = useAudioStore((s) => s.presets);
   const setActivePreset = useAudioStore((s) => s.setActivePreset);
   const setPresets = useAudioStore((s) => s.setPresets);
+  const updatePreset = useAudioStore((s) => s.updatePreset);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [dsp, setDsp] = useState<PresetConfig>(
@@ -269,13 +269,13 @@ export default function VoicePage() {
   /**
    * Preset kartına tıklayınca:
    * 1. Preset uygulanır (DSP motoru güncellenir)
-   * 2. Drawer otomatik açılır ve o presetin ayarları yüklenir
+   * 2. Drawer otomatik açılır ve o presetin güncel ayarları yüklenir
    */
   const handlePresetClick = async (name: string) => {
     const res = await api.applyPreset(name);
     if (res.ok) {
       setActivePreset(name);
-      setDsp(presets[name]);
+      setDsp(presets[name] ?? ({} as PresetConfig));
       setDrawerOpen(true);
     }
   };
@@ -284,21 +284,32 @@ export default function VoicePage() {
     async (patch: Partial<PresetConfig>) => {
       const next = { ...dsp, ...patch };
       setDsp(next);
+      updatePreset(activePreset, next);
       await api.updateDsp(next);
     },
-    [dsp]
+    [dsp, activePreset, updatePreset]
   );
 
-  const handleSavePreset = async (name: string) => {
-    const res = await api.savePreset(name, dsp);
-    if (!res.ok && res.error) alert(res.error);
-  };
-
-  const handleNewPreset = async (name: string) => {
-    const res = await api.createPreset(name, dsp);
+  const handleNewPreset = async () => {
+    const name = prompt("Yeni preset adı:");
+    if (!name?.trim()) return;
+    const res = await api.createPreset(name.trim(), dsp);
     if (res.ok && res.presets) {
       setPresets(res.presets);
-      setActivePreset(res.name!);
+      if (res.name) {
+        setActivePreset(res.name);
+        setDsp(res.presets[res.name] ?? dsp);
+      }
+    } else if (res.error) {
+      alert(res.error);
+    }
+  };
+
+  const handleResetPreset = async (name: string) => {
+    const res = await api.resetPreset(name);
+    if (res.ok && res.presets && res.config) {
+      setPresets(res.presets);
+      setDsp(res.config);
     } else if (res.error) {
       alert(res.error);
     }
@@ -308,8 +319,10 @@ export default function VoicePage() {
     const res = await api.deletePreset(name);
     if (res.ok && res.presets) {
       setPresets(res.presets);
-      setActivePreset(res.active!);
-      setDsp(res.presets[res.active!] ?? dsp);
+      if (res.active) {
+        setActivePreset(res.active);
+        setDsp(res.presets[res.active] ?? ({} as PresetConfig));
+      }
     }
   };
 
@@ -384,9 +397,8 @@ export default function VoicePage() {
           onDspChange={handleDspChange}
           onClose={() => setDrawerOpen(false)}
           activePreset={activePreset}
-          presets={presets}
-          onSave={handleSavePreset}
           onNew={handleNewPreset}
+          onReset={handleResetPreset}
           onDelete={handleDeletePreset}
         />
       )}

@@ -31,6 +31,7 @@ interface AudioStore {
   setHearSoundboard: (v: boolean) => void;
   setActivePreset: (name: string) => void;
   setPresets: (p: Record<string, PresetConfig>) => void;
+  updatePreset: (name: string, config: PresetConfig) => void;
   setSounds: (s: Sound[]) => void;
   upsertSound: (s: Sound) => void;
   removeSound: (id: string) => void;
@@ -67,6 +68,13 @@ export const useAudioStore = create<AudioStore>((set) => ({
   setHearSoundboard: (v) => set({ hearSoundboard: v }),
   setActivePreset: (name) => set({ activePreset: name }),
   setPresets: (p) => set({ presets: p }),
+  updatePreset: (name, config) =>
+    set((state) => ({
+      presets: {
+        ...state.presets,
+        [name]: config,
+      },
+    })),
   setSounds: (s) => set({ sounds: s }),
   upsertSound: (s) =>
     set((state) => {

@@ -148,10 +148,12 @@ export const api = {
   getPresets: () => call<{ presets: Record<string, PresetConfig>; active: string }>("get_presets"),
   applyPreset: (name: string) => call<{ ok: boolean; active: string }>("apply_preset", name),
   updateDsp: (opts: Partial<PresetConfig>) => call<void>("update_dsp", opts),
+  resetPreset: (name: string) =>
+    call<{ ok: boolean; presets?: Record<string, PresetConfig>; config?: PresetConfig; error?: string }>("reset_preset", name),
   createPreset: (name: string, config: PresetConfig) =>
     call<{ ok: boolean; name?: string; presets?: Record<string, PresetConfig>; error?: string }>("create_preset", name, config),
   savePreset: (name: string, config: PresetConfig) =>
-    call<{ ok: boolean; error?: string }>("save_preset", name, config),
+    call<{ ok: boolean; presets?: Record<string, PresetConfig>; error?: string }>("save_preset", name, config),
   deletePreset: (name: string) =>
     call<{ ok: boolean; presets?: Record<string, PresetConfig>; active?: string; error?: string }>("delete_preset", name),
 

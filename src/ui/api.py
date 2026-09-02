@@ -72,12 +72,14 @@ DEFAULT_PRESETS: dict[str, dict] = {
         "radio": False, "dist": False, "drive": 0.0,
         "rev": False, "rsize": 0.0, "rwet": 0.0,
         "chorus": False, "cdepth": 0.0,
+        "bypass": False, "gate": False, "gate_db": -65.0,
     },
     "Deep Voice": {
         "pitch": -5.5, "robot": False, "rfreq": 120, "rmix": 0.0,
         "radio": False, "dist": True, "drive": 0.20,
         "rev": True, "rsize": 0.40, "rwet": 0.25,
         "chorus": False, "cdepth": 0.0,
+        "bypass": False, "gate": False, "gate_db": -65.0,
     },
 }
 
@@ -107,6 +109,10 @@ class AudioverAPI:
 
         self._load_custom_presets()
         self._sync_sound_hotkeys()
+        # Aktif preset'i DSP motoruna uygula
+        presets = self._all_presets()
+        if self._active_preset in presets:
+            self._apply_dsp_config(presets[self._active_preset])
 
     # ------------------------------------------------------------------
     # State Snapshot
@@ -173,11 +179,27 @@ class AudioverAPI:
         cfg = presets[name]
         self._active_preset = name
         self._apply_dsp_config(cfg)
+        self._save_custom_presets()
         return {"ok": True, "active": name}
 
     def update_dsp(self, opts: dict) -> None:
-        """Slider değişikliklerini gerçek zamanlı DSP'ye yansıtır."""
+        """Slider değişikliklerini gerçek zamanlı DSP'ye yansıtır ve aktif preset'e kaydeder."""
         self._apply_dsp_config(opts)
+        if self._active_preset:
+            self._custom_presets[self._active_preset] = opts
+            self._save_custom_presets()
+
+    def reset_preset(self, name: str) -> dict:
+        """Varsayılan preset'i fabrika ayarlarına döndürür."""
+        if name not in DEFAULT_PRESETS:
+            return {"ok": False, "error": "Only default presets can be reset"}
+        if name in self._custom_presets:
+            del self._custom_presets[name]
+            self._save_custom_presets()
+        cfg = DEFAULT_PRESETS[name]
+        if self._active_preset == name:
+            self._apply_dsp_config(cfg)
+        return {"ok": True, "presets": self._all_presets(), "config": cfg}
 
     def create_preset(self, name: str, config: dict) -> dict:
         name = name.strip()
@@ -186,19 +208,18 @@ class AudioverAPI:
         if name in DEFAULT_PRESETS:
             return {"ok": False, "error": "Cannot overwrite built-in preset"}
         self._custom_presets[name] = config
-        self._save_custom_presets()
         self._active_preset = name
+        self._save_custom_presets()
         return {"ok": True, "name": name, "presets": self._all_presets()}
 
     def save_preset(self, name: str, config: dict) -> dict:
-        """Var olan custom preset'i günceller."""
-        if name in DEFAULT_PRESETS:
-            return {"ok": False, "error": "Cannot overwrite built-in preset"}
-        if name not in self._custom_presets:
-            return {"ok": False, "error": f"Preset '{name}' not found"}
+        """Preset ayarlarını kaydeder."""
+        name = name.strip()
+        if not name:
+            return {"ok": False, "error": "Name cannot be empty"}
         self._custom_presets[name] = config
         self._save_custom_presets()
-        return {"ok": True}
+        return {"ok": True, "presets": self._all_presets()}
 
     def delete_preset(self, name: str) -> dict:
         if name in DEFAULT_PRESETS:
@@ -206,10 +227,11 @@ class AudioverAPI:
         if name not in self._custom_presets:
             return {"ok": False, "error": "Preset not found"}
         del self._custom_presets[name]
-        self._save_custom_presets()
         if self._active_preset == name:
             self._active_preset = "Clean"
-            self.apply_preset("Clean")
+            presets = self._all_presets()
+            self._apply_dsp_config(presets.get("Clean", DEFAULT_PRESETS["Clean"]))
+        self._save_custom_presets()
         return {"ok": True, "presets": self._all_presets(), "active": self._active_preset}
 
     # ------------------------------------------------------------------
@@ -466,9 +488,11 @@ class AudioverAPI:
             import json
             with open(config_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            self._custom_presets = (
-                data.get("voice_effects", {}).get("custom_presets", {})
-            )
+            voice_data = data.get("voice_effects", {})
+            self._custom_presets = voice_data.get("custom_presets", {})
+            saved_active = voice_data.get("active_preset")
+            if saved_active and (saved_active in DEFAULT_PRESETS or saved_active in self._custom_presets):
+                self._active_preset = saved_active
         except Exception as e:
             logger.error(f"Error loading custom presets: {e}")
 
@@ -480,7 +504,9 @@ class AudioverAPI:
             if os.path.exists(config_path):
                 with open(config_path, "r", encoding="utf-8") as f:
                     settings = json.load(f)
-            settings.setdefault("voice_effects", {})["custom_presets"] = self._custom_presets
+            voice_data = settings.setdefault("voice_effects", {})
+            voice_data["custom_presets"] = self._custom_presets
+            voice_data["active_preset"] = self._active_preset
             os.makedirs(os.path.dirname(config_path), exist_ok=True)
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(settings, f, indent=2, ensure_ascii=False)
