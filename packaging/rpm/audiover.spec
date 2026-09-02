@@ -12,6 +12,9 @@ Requires:       pulseaudio-utils, /usr/bin/ffmpeg, zenity, python3
 %define _build_id_links none
 %define __strip /bin/true
 %define __os_install_post %{nil}
+%define __check_files %{nil}
+%define __brp_python_bytecompile %{nil}
+%define _binary_payload w3T0.zstdio
 
 %description
 Audiover is a real-time DSP voice changer and multi-channel soundboard

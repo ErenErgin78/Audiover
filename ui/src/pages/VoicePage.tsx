@@ -28,19 +28,27 @@ interface SliderRowProps {
 
 function SliderRow({ label, value, min, max, step = 1, format, onChange, enabled, onToggle }: SliderRowProps) {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-center gap-2.5">
       {onToggle !== undefined ? (
-        <label className="flex items-center gap-2 cursor-pointer" style={{ minWidth: 160 }}>
+        <label className="flex items-center gap-2 cursor-pointer shrink-0" style={{ width: 125 }}>
           <input
             type="checkbox"
             checked={enabled ?? false}
             onChange={(e) => onToggle(e.target.checked)}
-            className="w-4 h-4 rounded accent-[var(--accent)] cursor-pointer"
+            className="w-4 h-4 rounded accent-[var(--accent)] cursor-pointer shrink-0"
           />
-          <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{label}</span>
+          <span className="truncate" style={{ color: "var(--text-muted)", fontSize: 12 }} title={label}>
+            {label}
+          </span>
         </label>
       ) : (
-        <span style={{ color: "var(--text-muted)", fontSize: 12, minWidth: 160 }}>{label}</span>
+        <span
+          className="shrink-0 truncate"
+          style={{ color: "var(--text-muted)", fontSize: 12, width: 125 }}
+          title={label}
+        >
+          {label}
+        </span>
       )}
       <input
         type="range"
@@ -49,10 +57,13 @@ function SliderRow({ label, value, min, max, step = 1, format, onChange, enabled
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1"
+        className="flex-1 min-w-0"
         style={{ accentColor: "var(--accent)" }}
       />
-      <span style={{ color: "var(--accent)", fontSize: 12, minWidth: 52, textAlign: "right" }}>
+      <span
+        className="shrink-0 text-right font-mono"
+        style={{ color: "var(--accent)", fontSize: 12, width: 50 }}
+      >
         {format(value)}
       </span>
     </div>
@@ -96,7 +107,7 @@ function DspDrawer({ dsp, onDspChange, onClose, activePreset, onNew, onDelete, o
 
   return (
     <div
-      className="flex flex-col h-full"
+      className="flex flex-col h-full shrink-0"
       style={{
         width: 380,
         borderLeft: "1px solid var(--border)",
@@ -332,7 +343,7 @@ export default function VoicePage() {
   return (
     <div className="flex h-full">
       {/* Sol: Preset Grid */}
-      <div className="flex flex-col flex-1 p-6 gap-5 overflow-y-auto">
+      <div className="flex flex-col flex-1 min-w-0 p-6 gap-5 overflow-y-auto">
         {/* Başlık */}
         <div>
           <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>

@@ -50,5 +50,4 @@ Thumbs.db
 *.log
 tmp/
 temp/
-config/settings.json
-config/settings.json
+config/

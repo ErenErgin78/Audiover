@@ -51,14 +51,18 @@ mkdir -p "$STAGING_OPT" "$STAGING_BIN" "$STAGING_DESKTOP" "$STAGING_ICONS_SVG" "
 # Copy app source code, config, assets and UI build
 cp -r "$PROJECT_ROOT/src" "$STAGING_OPT/"
 cp -r "$PROJECT_ROOT/assets" "$STAGING_OPT/"
-cp -r "$PROJECT_ROOT/config" "$STAGING_OPT/"
+if [ -d "$PROJECT_ROOT/config" ]; then
+    cp -r "$PROJECT_ROOT/config" "$STAGING_OPT/"
+else
+    mkdir -p "$STAGING_OPT/config"
+fi
 mkdir -p "$STAGING_OPT/ui"
 cp -r "$PROJECT_ROOT/ui/dist" "$STAGING_OPT/ui/"
 cp "$PROJECT_ROOT/requirements.txt" "$STAGING_OPT/"
 
 # 5. Build Python Virtualenv in /opt/audiover/venv
 echo "[+] Step 4: Building isolated Python bundle..."
-python3 -m venv "$STAGING_OPT/venv"
+python3 -m venv --copies "$STAGING_OPT/venv"
 "$STAGING_OPT/venv/bin/pip" install --upgrade pip
 "$STAGING_OPT/venv/bin/pip" install -r "$PROJECT_ROOT/requirements.txt"
 
