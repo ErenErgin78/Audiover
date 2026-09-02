@@ -30,6 +30,44 @@ logger = logging.getLogger("Audiover.Main")
 UI_DIST = os.path.join(PROJECT_ROOT, "ui", "dist", "index.html")
 
 
+def resolve_config_and_sounds_paths() -> tuple[str, str]:
+    """Resolves XDG-compliant config and sound storage paths, seeding defaults on first run."""
+    config_home = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    data_home = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+
+    user_config_dir = os.path.join(config_home, "audiover")
+    user_sounds_dir = os.path.join(data_home, "audiover", "sounds")
+    user_config_path = os.path.join(user_config_dir, "settings.json")
+
+    os.makedirs(user_config_dir, exist_ok=True)
+    os.makedirs(user_sounds_dir, exist_ok=True)
+
+    bundled_config = os.path.join(PROJECT_ROOT, "config", "settings.json")
+    bundled_sounds = os.path.join(PROJECT_ROOT, "assets", "sounds")
+
+    # Seed default sample sounds to user library
+    if os.path.exists(bundled_sounds):
+        import shutil
+        for sound_file in os.listdir(bundled_sounds):
+            src_file = os.path.join(bundled_sounds, sound_file)
+            dst_file = os.path.join(user_sounds_dir, sound_file)
+            if os.path.isfile(src_file) and not os.path.exists(dst_file):
+                try:
+                    shutil.copy2(src_file, dst_file)
+                except Exception as e:
+                    logger.debug(f"Could not copy default sound {sound_file}: {e}")
+
+    # Seed default settings if not present
+    if not os.path.exists(user_config_path) and os.path.exists(bundled_config):
+        import shutil
+        try:
+            shutil.copy2(bundled_config, user_config_path)
+        except Exception as e:
+            logger.debug(f"Could not copy default settings: {e}")
+
+    return user_config_path, user_sounds_dir
+
+
 def main():
     logger.info("Initializing Audiover Engine...")
 
@@ -53,10 +91,11 @@ def main():
     dsp = VoiceDSP(sample_rate=sample_rate, block_size=block_size)
 
     # 3. Initialize Soundboard Engine
+    config_path, sounds_dir = resolve_config_and_sounds_paths()
     player = SoundboardPlayer(target_sample_rate=sample_rate)
     sb_manager = SoundboardManager(
-        config_path=os.path.join(PROJECT_ROOT, "config", "settings.json"),
-        sounds_dir=os.path.join(PROJECT_ROOT, "assets", "sounds"),
+        config_path=config_path,
+        sounds_dir=sounds_dir,
         player=player,
     )
     sb_manager.load_from_config()

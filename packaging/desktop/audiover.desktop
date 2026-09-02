@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Audiover
+GenericName=Voice Changer & Soundboard
+Comment=Real-Time Voice Changer & Multi-Channel Soundboard Engine for Linux / PipeWire
+Exec=audiover %U
+Icon=audiover
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Recorder;Mixer;
+Keywords=voice;changer;soundboard;pipewire;dsp;audio;effects;
+StartupWMClass=Audiover
