@@ -188,7 +188,8 @@ class AudioverAPI:
             "monitor_gain": self._engine.monitor_gain,
             "active_preset": self._active_preset,
             "presets": self._all_presets(),
-            "hotkey_permission": self._hotkey_mgr.check_permissions(),
+            "hotkey_permission": self._hotkey_mgr.has_global_permissions,
+            "hotkey_backend": self._hotkey_mgr.active_backend.value,
             "language": self._language,
         }
 
@@ -239,6 +240,9 @@ class AudioverAPI:
             "in_rms": round(self._engine.meter_input_rms, 4),
             "out_peak": round(self._engine.meter_output_peak, 4),
             "out_rms": round(self._engine.meter_output_rms, 4),
+            "is_muted": self._engine.is_muted,
+            "hear_myself": self._engine.hear_myself,
+            "engine_active": self._engine.is_running,
         }
 
     # ------------------------------------------------------------------
@@ -483,9 +487,11 @@ class AudioverAPI:
     # ------------------------------------------------------------------
 
     def get_hotkey_status(self) -> dict:
-        has_perm = self._hotkey_mgr.check_permissions()
+        status = self._hotkey_mgr.get_status()
         return {
-            "has_permission": has_perm,
+            "backend": status["backend"],
+            "has_permission": status["has_permission"],
+            "is_running": status["is_running"],
             "hotkeys": [
                 {"action": "Mute Microphone", "key": "F9"},
                 {"action": "Bypass All DSP Effects", "key": "F10"},
@@ -493,6 +499,11 @@ class AudioverAPI:
                 {"action": "Toggle Hear Myself (Loopback)", "key": "F8"},
             ],
         }
+
+    def trigger_hotkey(self, key: str) -> dict:
+        """Triggers a hotkey manually from in-window UI key listeners."""
+        self._hotkey_mgr.trigger_hotkey_manually(key)
+        return {"ok": True}
 
     # ------------------------------------------------------------------
     # Lifecycle

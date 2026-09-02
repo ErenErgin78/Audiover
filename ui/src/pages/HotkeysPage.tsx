@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
-import { api } from "../hooks/useApi";
+import { api, type HotkeyStatus } from "../hooks/useApi";
 import { useI18n } from "../hooks/useI18n";
-
-interface HotkeyStatus {
-  has_permission: boolean;
-  hotkeys: Array<{ action: string; key: string }>;
-}
 
 export default function HotkeysPage() {
   const [status, setStatus] = useState<HotkeyStatus | null>(null);
@@ -31,40 +26,92 @@ export default function HotkeysPage() {
     return action;
   };
 
+  const isPortal = status.backend === "portal";
+  const isEvdev = status.backend === "evdev";
+  const isInWindow = status.backend === "in_window";
+
   return (
     <div className="flex flex-col gap-4 p-6 overflow-y-auto max-w-4xl">
-      <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
-        {t.hotkeys.title}
-      </h1>
+      <div className="flex items-center justify-between">
+        <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
+          {t.hotkeys.title}
+        </h1>
+        <span
+          className="px-3 py-1 rounded-full text-xs font-bold font-mono tracking-wide"
+          style={{
+            background: isPortal
+              ? "rgba(0, 229, 255, 0.15)"
+              : isEvdev
+              ? "rgba(0, 230, 118, 0.15)"
+              : "rgba(255, 214, 0, 0.15)",
+            color: isPortal
+              ? "var(--accent)"
+              : isEvdev
+              ? "var(--green)"
+              : "var(--yellow)",
+            border: isPortal
+              ? "1px solid rgba(0, 229, 255, 0.3)"
+              : isEvdev
+              ? "1px solid rgba(0, 230, 118, 0.3)"
+              : "1px solid rgba(255, 214, 0, 0.3)",
+          }}
+        >
+          {isPortal
+            ? t.hotkeys.tierPortalBadge
+            : isEvdev
+            ? t.hotkeys.tierEvdevBadge
+            : t.hotkeys.tierInWindowBadge}
+        </span>
+      </div>
 
-      {/* Permission Status */}
+      {/* Multi-Tier Status Card */}
       <section
-        className="rounded-xl p-4"
-        style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
+        className="rounded-xl p-5 flex flex-col gap-3"
+        style={{
+          background: "var(--bg-card)",
+          border: isPortal || isEvdev ? "1px solid var(--border-hover)" : "1px solid var(--border)",
+        }}
       >
-        <h2 style={{ color: "var(--accent)", fontWeight: 700, fontSize: 13, marginBottom: 10 }}>
-          {t.hotkeys.statusCard}
-        </h2>
-        {status.has_permission ? (
+        <div className="flex items-center gap-2">
+          <span className="text-lg">
+            {isPortal ? "🌐" : isEvdev ? "⚡" : "🪟"}
+          </span>
+          <h2 style={{ color: "var(--accent)", fontWeight: 700, fontSize: 14 }}>
+            {isPortal
+              ? t.hotkeys.tierPortalTitle
+              : isEvdev
+              ? t.hotkeys.tierEvdevTitle
+              : t.hotkeys.tierInWindowTitle}
+          </h2>
+        </div>
+
+        {isPortal && (
           <div>
-            <p style={{ color: "var(--green)", fontWeight: 700, fontSize: 13 }}>
-              {t.hotkeys.statusActive}
-            </p>
-            <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 4 }}>
-              {t.hotkeys.statusActiveDesc}
+            <p style={{ color: "var(--green)", fontWeight: 600, fontSize: 13 }}>
+              {t.hotkeys.tierPortalDesc}
             </p>
           </div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            <p style={{ color: "var(--yellow)", fontWeight: 700, fontSize: 13 }}>
-              {t.hotkeys.statusInactive}
+        )}
+
+        {isEvdev && (
+          <div>
+            <p style={{ color: "var(--green)", fontWeight: 600, fontSize: 13 }}>
+              {t.hotkeys.tierEvdevDesc}
+            </p>
+          </div>
+        )}
+
+        {isInWindow && (
+          <div className="flex flex-col gap-2.5">
+            <p style={{ color: "var(--yellow)", fontWeight: 600, fontSize: 13 }}>
+              {t.hotkeys.tierInWindowDesc}
             </p>
             <p style={{ color: "var(--text-muted)", fontSize: 12 }}>
-              {t.hotkeys.statusInactiveDesc}{" "}
+              {t.hotkeys.tierInWindowHelp}{" "}
               <code style={{ color: "var(--accent)" }}>input</code>:
             </p>
             <code
-              className="px-3 py-2 rounded-lg text-xs"
+              className="px-3 py-2 rounded-lg text-xs font-mono"
               style={{ background: "var(--bg-surface)", color: "var(--accent)", display: "block" }}
             >
               sudo usermod -aG input $USER
@@ -131,3 +178,4 @@ export default function HotkeysPage() {
     </div>
   );
 }
+

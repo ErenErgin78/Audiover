@@ -88,10 +88,16 @@ export interface TranslationSchema {
   hotkeys: {
     title: string;
     statusCard: string;
-    statusActive: string;
-    statusActiveDesc: string;
-    statusInactive: string;
-    statusInactiveDesc: string;
+    tierPortalBadge: string;
+    tierPortalTitle: string;
+    tierPortalDesc: string;
+    tierEvdevBadge: string;
+    tierEvdevTitle: string;
+    tierEvdevDesc: string;
+    tierInWindowBadge: string;
+    tierInWindowTitle: string;
+    tierInWindowDesc: string;
+    tierInWindowHelp: string;
     statusHelp: string;
     actionShortcutsCard: string;
     actionHeader: string;

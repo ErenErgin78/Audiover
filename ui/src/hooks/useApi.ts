@@ -82,7 +82,15 @@ export interface AppState {
   active_preset: string;
   presets: Record<string, PresetConfig>;
   hotkey_permission: boolean;
+  hotkey_backend?: "portal" | "evdev" | "in_window";
   language?: "tr" | "en";
+}
+
+export interface HotkeyStatus {
+  backend: "portal" | "evdev" | "in_window";
+  has_permission: boolean;
+  is_running: boolean;
+  hotkeys: Array<{ action: string; key: string }>;
 }
 
 export interface PresetConfig {
@@ -117,6 +125,9 @@ export interface Meters {
   in_rms: number;
   out_peak: number;
   out_rms: number;
+  is_muted?: boolean;
+  hear_myself?: boolean;
+  engine_active?: boolean;
 }
 
 export interface AudioDevice {
@@ -179,6 +190,6 @@ export const api = {
   setMicGain: (gain: number) => call<void>("set_mic_gain", gain),
   setMonitorGain: (gain: number) => call<void>("set_monitor_gain", gain),
 
-  getHotkeyStatus: () =>
-    call<{ has_permission: boolean; hotkeys: Array<{ action: string; key: string }> }>("get_hotkey_status"),
+  getHotkeyStatus: () => call<HotkeyStatus>("get_hotkey_status"),
+  triggerHotkey: (key: string) => call<{ ok: boolean }>("trigger_hotkey", key),
 };

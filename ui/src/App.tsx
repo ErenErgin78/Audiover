@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useAudioStore } from "./store/audioStore";
 import { api } from "./hooks/useApi";
 import { useMeter } from "./hooks/useMeter";
+import { useInWindowHotkeys } from "./hooks/useInWindowHotkeys";
 import Layout from "./components/layout/Layout";
 import VoicePage from "./pages/VoicePage";
 import SoundboardPage from "./pages/SoundboardPage";
@@ -23,6 +24,9 @@ function ActivePage() {
 export default function App() {
   const initFromState = useAudioStore((s) => s.initFromState);
   const initialized = useAudioStore((s) => s.initialized);
+
+  // In-window hotkey listener (Tier 3 fallback + window-focus support)
+  useInWindowHotkeys();
 
   // Bootstrap: fetch full state on startup
   useEffect(() => {

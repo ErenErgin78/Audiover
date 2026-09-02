@@ -12,6 +12,7 @@ interface AudioStore {
   hearSoundboard: boolean;
   activePreset: string;
   presets: Record<string, PresetConfig>;
+  hotkeyBackend: "portal" | "evdev" | "in_window";
 
   // ── VU Meters ──
   meters: Meters;
@@ -50,6 +51,7 @@ export const useAudioStore = create<AudioStore>((set) => ({
   hearSoundboard: true,
   activePreset: "Clean",
   presets: {},
+  hotkeyBackend: "in_window",
   meters: { in_peak: 0, in_rms: 0, out_peak: 0, out_rms: 0 },
   sounds: [],
   activePage: "voice",
@@ -64,6 +66,7 @@ export const useAudioStore = create<AudioStore>((set) => ({
       hearSoundboard: state.hear_soundboard,
       activePreset: state.active_preset,
       presets: state.presets,
+      hotkeyBackend: state.hotkey_backend || (state.hotkey_permission ? "evdev" : "in_window"),
       initialized: true,
     }),
 

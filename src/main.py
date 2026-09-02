@@ -131,7 +131,6 @@ def main():
 
     # 5. Initialize Global Hotkey System
     hotkey_mgr = HotkeyManager()
-    hotkey_mgr.start()
 
     # 6. Register global hotkeys
     hotkey_mgr.register_hotkey("F9", lambda: setattr(stream_engine, "is_muted", not stream_engine.is_muted))
@@ -139,8 +138,9 @@ def main():
     hotkey_mgr.register_hotkey("F11", player.stop_all)
     hotkey_mgr.register_hotkey("F8", lambda: stream_engine.set_hear_myself(not stream_engine.hear_myself))
 
-    # 7. Start Audio Stream Engine
+    # 7. Start Audio Stream Engine & Hotkey Listeners
     stream_engine.start()
+    hotkey_mgr.start()
 
     # 8. Create JS ↔ Python API bridge
     api = AudioverAPI(
