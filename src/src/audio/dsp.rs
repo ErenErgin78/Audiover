@@ -322,11 +322,18 @@ pub struct BiquadFilter {
 }
 
 impl BiquadFilter {
+    /// Telephone bandpass (300 Hz – 3400 Hz) matching Python's
+    /// `scipy.signal.butter(2, [300, 3400], btype="bandpass")` target
+    /// response: flat 0 dB passband with steep skirts.
+    ///
+    /// Uses the standard RBJ "band pass (constant 0 dB peak gain)" design
+    /// with Q = f0 / BW, where f0 is the geometric center and BW the
+    /// bandwidth in Hz.
     pub fn new_butterworth_bandpass(sample_rate: f32, f_low: f32, f_high: f32) -> Self {
         let f0 = (f_low * f_high).sqrt();
-        let bw = (f_high - f_low) / f0;
+        let q = f0 / (f_high - f_low).max(1.0);
         let w0 = 2.0 * PI * f0 / sample_rate;
-        let alpha = w0.sin() * (w0.sin() * 0.5 * bw.ln_1p()).sinh().max(0.0001);
+        let alpha = w0.sin() / (2.0 * q.max(0.05));
 
         let b0 = alpha;
         let b1 = 0.0;

@@ -63,12 +63,12 @@ impl HotkeyManager {
     pub fn trigger(&self, key: &str) -> bool {
         let normalized = key.trim().to_uppercase();
 
-        // 80ms debounce per key
+        // 150ms debounce per key (Python parity).
         {
             let mut last = self.last_triggers.lock();
             let now = Instant::now();
             if let Some(prev) = last.get(&normalized) {
-                if now.duration_since(*prev) < Duration::from_millis(80) {
+                if now.duration_since(*prev) < Duration::from_millis(150) {
                     return false;
                 }
             }
@@ -90,14 +90,26 @@ impl HotkeyManager {
     }
 
     pub fn get_status(&self) -> HotkeyStatus {
-        let keys = self.callbacks.read();
-        let hotkeys = keys
-            .keys()
-            .map(|k| HotkeyItem {
-                action: k.clone(),
-                key: k.clone(),
-            })
-            .collect();
+        // Fixed action labels mirroring Python `get_hotkey_status` so the UI
+        // can match on them (HotkeysPage.getActionLabel).
+        let hotkeys = vec![
+            HotkeyItem {
+                action: "Mute Microphone".to_string(),
+                key: "F9".to_string(),
+            },
+            HotkeyItem {
+                action: "Bypass All DSP Effects".to_string(),
+                key: "F10".to_string(),
+            },
+            HotkeyItem {
+                action: "Stop All Sounds (Panic)".to_string(),
+                key: "F11".to_string(),
+            },
+            HotkeyItem {
+                action: "Toggle Hear Myself (Loopback)".to_string(),
+                key: "F8".to_string(),
+            },
+        ];
 
         let has_perm = self.has_permission.load(Ordering::Relaxed);
         let backend = if has_perm {

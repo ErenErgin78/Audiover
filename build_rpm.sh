@@ -29,9 +29,9 @@ npm run build
 cd "$PROJECT_ROOT"
 
 # 3. Build Rust Native Application
-echo "[+] Step 2: Compiling Rust release binary..."
+echo "[+] Step 2: Compiling Rust release binary with embedded UI (custom-protocol)..."
 cd "$PROJECT_ROOT/src"
-cargo build --release
+cargo build --release --features custom-protocol
 cd "$PROJECT_ROOT"
 
 # 4. Generate Icons if needed
@@ -92,8 +92,23 @@ rpmbuild -bb \
 # 7. Collect output package
 mkdir -p "$DIST_DIR"
 cp "$BUILD_DIR"/RPMS/*/*.rpm "$DIST_DIR/"
+RPM_FILE=$(ls -t "$DIST_DIR"/*.rpm | head -n 1)
 
 echo "========================================================"
 echo "  RPM Package Built Successfully!"
-echo "  Output: $(ls "$DIST_DIR"/*.rpm)"
+echo "  Output: $RPM_FILE"
+echo "========================================================"
+
+# 8. Reinstall on local system (remove previous, install new)
+echo "[+] Step 6: Removing old application version and installing newly built package..."
+if rpm -q audiover &>/dev/null || rpm -q audiover_rust &>/dev/null; then
+    echo "[*] Removing previous version..."
+    sudo dnf remove -y audiover audiover_rust 2>/dev/null || true
+fi
+
+echo "[*] Installing fresh RPM package: $RPM_FILE..."
+sudo dnf install -y "$RPM_FILE"
+
+echo "========================================================"
+echo "  Audiover has been successfully reinstalled!"
 echo "========================================================"

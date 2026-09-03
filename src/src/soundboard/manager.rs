@@ -303,13 +303,10 @@ impl SoundboardManager {
 
     pub fn remove_sound(&self, id: &str) -> bool {
         let mut map = self.sounds.write();
-        if let Some(item) = map.remove(id) {
+        if map.remove(id).is_some() {
             self.player.remove_track(id);
-            // If in sounds_dir, delete file
-            let p = Path::new(&item.file_path);
-            if p.starts_with(&self.sounds_dir) && p.exists() {
-                let _ = fs::remove_file(p);
-            }
+            // Python parity: library files on disk are kept; only the
+            // library entry and the in-memory track are removed.
             drop(map);
             self.save_to_config();
             true
@@ -330,11 +327,8 @@ impl SoundboardManager {
                 if hk.trim().to_uppercase() == normalized {
                     let id = sound.id.clone();
                     drop(map);
-                    if self.player.is_playing(&id) {
-                        self.player.stop(&id);
-                    } else {
-                        self.player.play(&id);
-                    }
+                    // Python parity: sound hotkeys always (re)start playback.
+                    self.player.play(&id);
                     return true;
                 }
             }

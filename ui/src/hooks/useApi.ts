@@ -19,43 +19,97 @@ function hasTauri(): boolean {
   return typeof window !== "undefined" && (isTauri() || Boolean(window.__TAURI_INTERNALS__));
 }
 
+export type BackendKind = "tauri" | "pywebview" | "none";
+
+export function getBackendKind(): BackendKind {
+  if (typeof window === "undefined") return "none";
+  if (isTauri() || Boolean(window.__TAURI_INTERNALS__)) return "tauri";
+  if (window.pywebview?.api && Object.keys(window.pywebview.api).length > 0) return "pywebview";
+  return "none";
+}
+
 function getPyWebViewApi() {
   return window.pywebview?.api ?? null;
 }
 
 let _pywebviewReady: Promise<NonNullable<ReturnType<typeof getPyWebViewApi>>> | null = null;
 
-function waitForPyWebView(): Promise<NonNullable<ReturnType<typeof getPyWebViewApi>>> {
+/**
+ * Waits for the PyWebView bridge. REJECTS (instead of hanging forever)
+ * when the bridge never appears — e.g. the page was opened in a plain
+ * browser with no backend. Callers surface this as a connection error.
+ */
+function waitForPyWebView(
+  timeoutMs = 8000
+): Promise<NonNullable<ReturnType<typeof getPyWebViewApi>>> {
   if (_pywebviewReady) return _pywebviewReady;
 
-  _pywebviewReady = new Promise((resolve) => {
+  _pywebviewReady = new Promise((resolve, reject) => {
     const api = getPyWebViewApi();
     if (api && Object.keys(api).length > 0) {
       resolve(api);
       return;
     }
 
+    let settled = false;
     const onReady = () => {
       const readyApi = getPyWebViewApi();
-      if (readyApi) resolve(readyApi);
-      else poll();
+      if (readyApi && !settled) {
+        settled = true;
+        window.removeEventListener("pywebviewready", onReady);
+        resolve(readyApi);
+      }
     };
-    window.addEventListener("pywebviewready", onReady, { once: true });
+    window.addEventListener("pywebviewready", onReady);
 
-    let attempts = 0;
+    // Poll for late-injected bridges (separate from the event path).
+    const startedAt = Date.now();
     const poll = () => {
+      if (settled) return;
       const a = getPyWebViewApi();
       if (a && Object.keys(a).length > 0) {
+        settled = true;
         window.removeEventListener("pywebviewready", onReady);
         resolve(a);
         return;
       }
-      if (attempts++ < 100) setTimeout(poll, 50);
+      if (Date.now() - startedAt > timeoutMs) {
+        settled = true;
+        window.removeEventListener("pywebviewready", onReady);
+        _pywebviewReady = null; // allow a later retry
+        reject(
+          new Error(
+            "Backend bridge not found: no Tauri IPC and no PyWebView API. " +
+              "Launch the app via ./run.sh (dev) or the installed Audiover binary — " +
+              "opening the UI in a plain browser has no backend to talk to."
+          )
+        );
+        return;
+      }
+      setTimeout(poll, 100);
     };
-    setTimeout(poll, 500);
+    setTimeout(poll, 100);
   });
 
   return _pywebviewReady;
+}
+
+/** Invoke with a timeout so a dead backend can't hang the UI forever. */
+async function invokeWithTimeout<T>(fn: () => Promise<T>, timeoutMs: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      fn(),
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Timed out waiting for backend: ${what} (${timeoutMs}ms). Is the backend process still running?`)),
+          timeoutMs
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 /* ── Typed wrappers ──────────────────────────────────────────── */
@@ -136,11 +190,46 @@ export interface AudioDevicesState {
   hear_soundboard: boolean;
 }
 
+export interface LogEntry {
+  seq: number;
+  ts_ms: number;
+  level: string;
+  target: string;
+  message: string;
+}
+
+export interface Diagnostics {
+  app_version: string;
+  engine_active: boolean;
+  is_muted: boolean;
+  hear_myself: boolean;
+  hear_soundboard: boolean;
+  mic_gain: number;
+  monitor_gain: number;
+  block_size: number;
+  sample_rate: number;
+  selected_input: string | null;
+  selected_monitor: string | null;
+  input_count: number;
+  output_count: number;
+  current_input: number | null;
+  current_monitor: number | null;
+  virtual_sink_found: boolean;
+  pactl_available: boolean;
+  active_preset: string;
+  preset_count: number;
+  language: string;
+  hotkey_backend: string;
+  hotkey_permission: boolean;
+  log_entries: number;
+  config_path: string;
+}
+
 export const api = {
   getState: async (): Promise<AppState> => {
-    if (hasTauri()) return invoke<AppState>("get_state");
+    if (hasTauri()) return invokeWithTimeout(() => invoke<AppState>("get_state"), 8000, "get_state");
     const py = await waitForPyWebView();
-    return py.get_state();
+    return invokeWithTimeout(() => py.get_state(), 8000, "get_state");
   },
 
   setLanguage: async (lang: string) => {
@@ -378,5 +467,27 @@ export const api = {
     if (hasTauri()) return invoke<{ ok: boolean }>("trigger_hotkey", { key });
     const py = await waitForPyWebView();
     return py.trigger_hotkey(key);
+  },
+
+  getLogs: async (sinceSeq?: number | null): Promise<LogEntry[]> => {
+    if (hasTauri()) {
+      return invoke<LogEntry[]>("get_logs", { sinceSeq: sinceSeq ?? null });
+    }
+    const py = await waitForPyWebView();
+    if (typeof py.get_logs !== "function") return [];
+    return py.get_logs(sinceSeq ?? null);
+  },
+
+  clearLogs: async (): Promise<void> => {
+    if (hasTauri()) return invoke<void>("clear_logs");
+    const py = await waitForPyWebView();
+    if (typeof py.clear_logs === "function") return py.clear_logs();
+  },
+
+  getDiagnostics: async (): Promise<Diagnostics | null> => {
+    if (hasTauri()) return invoke<Diagnostics>("get_diagnostics");
+    const py = await waitForPyWebView();
+    if (typeof py.get_diagnostics !== "function") return null;
+    return py.get_diagnostics();
   },
 };

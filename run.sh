@@ -17,6 +17,16 @@ if ! command -v cargo &>/dev/null; then
     exit 1
 fi
 
-# 3. Launch Tauri Dev Server
+# 3. Preflight: fail fast if the dev port is already taken (e.g. a stale
+# `vite` from a previous session). The dev server uses strictPort, so it
+# will not silently move to 5174 while Tauri polls 5173.
+if (echo > /dev/tcp/127.0.0.1/5173) 2>/dev/null; then
+    echo "[-] Error: port 5173 is already in use (stale dev server?)."
+    ss -tlnp 2>/dev/null | grep ':5173' || true
+    echo "    Stop the old process (e.g. 'pkill -f \"vite --\"') and retry."
+    exit 1
+fi
+
+# 4. Launch Tauri Dev Server
 echo "[+] Launching Audiover (Tauri + React)..."
 exec npx --prefix ui tauri dev "$@"

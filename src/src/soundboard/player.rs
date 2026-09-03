@@ -92,6 +92,7 @@ impl SoundboardPlayer {
         Some(track)
     }
 
+    #[allow(dead_code)]
     pub fn is_playing(&self, sound_id: &str) -> bool {
         self.tracks
             .read()
@@ -108,8 +109,10 @@ impl SoundboardPlayer {
     }
 
     pub fn pause(&self, sound_id: &str) {
+        // Python parity: pause halts playback without resetting position
+        // (it never toggles back to playing).
         if let Some(track) = self.tracks.write().get_mut(sound_id) {
-            track.is_playing = !track.is_playing;
+            track.is_playing = false;
         }
     }
 
@@ -314,4 +317,62 @@ fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32; 2]>
     }
 
     output
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn insert_test_track(player: &SoundboardPlayer, id: &str, frames: usize) {
+        player.tracks.write().insert(
+            id.to_string(),
+            SoundTrack {
+                name: id.to_string(),
+                audio_data: vec![[0.5, 0.5]; frames],
+                duration_sec: frames as f32 / 48000.0,
+                position: 0,
+                volume: 1.0,
+                loop_playback: false,
+                is_playing: false,
+            },
+        );
+    }
+
+    #[test]
+    fn pause_halts_without_toggling() {
+        let player = SoundboardPlayer::new(48000);
+        insert_test_track(&player, "s1", 1024);
+        player.play("s1");
+        assert!(player.is_playing("s1"));
+        player.pause("s1");
+        assert!(!player.is_playing("s1"));
+        // A second pause must NOT resume playback (Python parity).
+        player.pause("s1");
+        assert!(!player.is_playing("s1"));
+    }
+
+    #[test]
+    fn play_restarts_from_zero() {
+        let player = SoundboardPlayer::new(48000);
+        insert_test_track(&player, "s1", 1024);
+        player.play("s1");
+        let mut buf = vec![[0.0, 0.0]; 256];
+        player.mix_into(&mut buf, 1.0);
+        assert_eq!(player.tracks.read()["s1"].position, 256);
+        player.play("s1");
+        assert_eq!(player.tracks.read()["s1"].position, 0);
+    }
+
+    #[test]
+    fn mix_advances_position_exactly_once_per_block() {
+        let player = SoundboardPlayer::new(48000);
+        insert_test_track(&player, "s1", 4096);
+        player.play("s1");
+        let mut buf = vec![[0.0, 0.0]; 256];
+        player.mix_into(&mut buf, 1.0);
+        // One mix call consumes exactly one block; the engine now mixes once
+        // per input block and shares the result (no double-speed playback).
+        assert_eq!(player.tracks.read()["s1"].position, 256);
+        assert!(buf.iter().all(|f| f[0] == 0.5 && f[1] == 0.5));
+    }
 }

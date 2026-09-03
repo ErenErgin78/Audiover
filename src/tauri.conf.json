@@ -5,7 +5,7 @@
   "identifier": "com.audiover.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://127.0.0.1:5173",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../ui/dist"
   },
@@ -20,7 +20,8 @@
         "resizable": true,
         "fullscreen": false,
         "decorations": true,
-        "transparent": false
+        "transparent": false,
+        "backgroundColor": "#0F111A"
       }
     ],
     "security": {

@@ -1,6 +1,9 @@
 use crate::audio::dsp::{DSPOptions, VoiceDSP};
-use crate::audio::stream::{AudioDevicesState, AudioStreamEngine, Meters};
-use crate::input::hotkeys::{HotkeyManager, HotkeyStatus};
+use crate::audio::stream::{
+    is_virtual_device_name, AudioDevicesState, AudioStreamEngine, Meters,
+};
+use crate::input::hotkeys::{HotkeyItem, HotkeyManager, HotkeyStatus};
+use crate::log_buffer::{LogBuffer, LogEntry};
 use crate::soundboard::manager::{SoundItem, SoundboardManager};
 use crate::soundboard::player::{SoundProgress, SoundboardPlayer};
 use base64::Engine;
@@ -8,11 +11,12 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tauri::State;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PresetConfig {
     pub pitch: f32,
     pub robot: bool,
@@ -62,6 +66,126 @@ pub struct AppContext {
     pub active_preset: Mutex<String>,
     pub presets: Mutex<HashMap<String, PresetConfig>>,
     pub language: Mutex<String>,
+    pub config_path: PathBuf,
+    pub log_buffer: Arc<LogBuffer>,
+}
+
+// ─────────────────────────────────────────────────────────────
+// Settings persistence (mirrors Python AudioverAPI._save_settings:
+// { app: { language }, audio: { ... }, voice_effects: { custom_presets,
+// active_preset } }; the soundboard section is owned by SoundboardManager).
+// ─────────────────────────────────────────────────────────────
+
+fn read_settings_file(config_path: &Path) -> serde_json::Value {
+    fs::read_to_string(config_path)
+        .ok()
+        .and_then(|c| serde_json::from_str(&c).ok())
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+fn write_settings_file(config_path: &Path, value: &serde_json::Value) {
+    if let Some(parent) = config_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+    if let Ok(formatted) = serde_json::to_string_pretty(value) {
+        let _ = fs::write(config_path, formatted);
+    }
+}
+
+fn persist_audio_settings(state: &AppContext) {
+    let mut settings = read_settings_file(&state.config_path);
+    if !settings.is_object() {
+        settings = serde_json::json!({});
+    }
+    let engine = &state.stream_engine;
+    settings["audio"] = serde_json::json!({
+        "mic_gain": engine.get_mic_gain(),
+        "monitor_gain": engine.get_monitor_gain(),
+        "hear_myself": engine.hear_myself.load(Ordering::Relaxed),
+        "hear_soundboard": engine.hear_soundboard.load(Ordering::Relaxed),
+        "block_size": engine.get_block_size(),
+        "input_device_name": engine.selected_input_name().and_then(|n| {
+            // Resolve the stored selection to a concrete device name when
+            // possible so it survives re-enumeration.
+            let list = AudioStreamEngine::list_input_devices();
+            list.into_iter().find(|d| {
+                let a = d.name.to_lowercase();
+                let b = n.trim().to_lowercase();
+                a == b || a.contains(b.as_str())
+            }).map(|d| d.name).or(Some(n))
+        }),
+        "monitor_device_name": engine.selected_monitor_name(),
+    });
+    write_settings_file(&state.config_path, &settings);
+}
+
+fn persist_voice_settings(state: &AppContext) {
+    let mut settings = read_settings_file(&state.config_path);
+    if !settings.is_object() {
+        settings = serde_json::json!({});
+    }
+    let defaults = get_default_presets();
+    let presets = state.presets.lock();
+    // Only non-built-in presets (and overrides) are persisted as customs,
+    // mirroring Python `voice_effects.custom_presets`.
+    let mut customs = serde_json::Map::new();
+    for (name, cfg) in presets.iter() {
+        if defaults.get(name) != Some(cfg) {
+            customs.insert(name.clone(), serde_json::to_value(cfg).unwrap_or_default());
+        }
+    }
+    settings["voice_effects"] = serde_json::json!({
+        "custom_presets": customs,
+        "active_preset": *state.active_preset.lock(),
+    });
+    write_settings_file(&state.config_path, &settings);
+}
+
+fn persist_language(state: &AppContext) {
+    let mut settings = read_settings_file(&state.config_path);
+    if !settings.is_object() {
+        settings = serde_json::json!({});
+    }
+    if settings.get("app").is_none() {
+        settings["app"] = serde_json::json!({});
+    }
+    settings["app"]["language"] = serde_json::json!(*state.language.lock());
+    write_settings_file(&state.config_path, &settings);
+}
+
+/// Loads persisted `{ custom_presets, active_preset, language }` on startup.
+/// Returns `(custom_presets, active_preset, language)`.
+pub fn load_persisted_voice_and_app(
+    config_path: &Path,
+) -> (HashMap<String, PresetConfig>, Option<String>, Option<String>) {
+    let settings = read_settings_file(config_path);
+    let mut customs = HashMap::new();
+    let mut active = None;
+    if let Some(voice) = settings.get("voice_effects") {
+        if let Some(map) = voice.get("custom_presets").and_then(|v| v.as_object()) {
+            for (k, v) in map {
+                if let Ok(cfg) = serde_json::from_value::<PresetConfig>(v.clone()) {
+                    customs.insert(k.clone(), cfg);
+                }
+            }
+        }
+        active = voice
+            .get("active_preset")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+    }
+    let language = settings
+        .get("app")
+        .and_then(|a| a.get("language"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    (customs, active, language)
+}
+
+/// Loads the persisted `audio` section on startup.
+pub fn load_persisted_audio(config_path: &Path) -> serde_json::Value {
+    let settings = read_settings_file(config_path);
+    settings.get("audio").cloned().unwrap_or_else(|| serde_json::json!({}))
 }
 
 pub fn get_default_presets() -> HashMap<String, PresetConfig> {
@@ -238,18 +362,25 @@ pub fn get_state(state: State<'_, AppContext>) -> AppStatePayload {
 
 #[tauri::command]
 pub fn set_language(lang: String, state: State<'_, AppContext>) -> serde_json::Value {
+    if lang != "tr" && lang != "en" {
+        return serde_json::json!({ "ok": false, "error": "Unsupported language" });
+    }
     *state.language.lock() = lang.clone();
+    persist_language(&state);
     serde_json::json!({ "ok": true, "language": lang })
 }
 
 #[tauri::command]
 pub fn set_engine_active(active: bool, state: State<'_, AppContext>) -> serde_json::Value {
     if active {
-        let _ = state.stream_engine.start();
+        // Report the real outcome: start() can fail (e.g. no mic).
+        let ok = state.stream_engine.start().is_ok()
+            && state.stream_engine.is_running.load(Ordering::SeqCst);
+        serde_json::json!({ "ok": ok, "active": ok })
     } else {
         state.stream_engine.stop();
+        serde_json::json!({ "ok": true, "active": false })
     }
-    serde_json::json!({ "ok": true, "active": active })
 }
 
 #[tauri::command]
@@ -260,11 +391,13 @@ pub fn set_muted(muted: bool, state: State<'_, AppContext>) {
 #[tauri::command]
 pub fn set_hear_myself(enabled: bool, state: State<'_, AppContext>) {
     state.stream_engine.set_hear_myself(enabled);
+    persist_audio_settings(&state);
 }
 
 #[tauri::command]
 pub fn set_hear_soundboard(enabled: bool, state: State<'_, AppContext>) {
     state.stream_engine.set_hear_soundboard(enabled);
+    persist_audio_settings(&state);
 }
 
 #[tauri::command]
@@ -289,6 +422,9 @@ pub fn apply_preset(name: String, state: State<'_, AppContext>) -> serde_json::V
         dsp.reset();
         dsp.update_options(dsp_opts);
         *state.active_preset.lock() = name.clone();
+        drop(presets);
+        drop(dsp);
+        persist_voice_settings(&state);
         serde_json::json!({ "ok": true, "active": name })
     } else {
         serde_json::json!({ "ok": false, "error": "Preset not found" })
@@ -318,6 +454,9 @@ pub fn update_dsp(opts: serde_json::Value, state: State<'_, AppContext>) {
 
         let dsp_opts = preset_to_dsp_options(cfg);
         state.dsp.lock().update_options(dsp_opts);
+        drop(presets);
+        // Python parity: live tweaks are stored back onto the active preset.
+        persist_voice_settings(&state);
     }
 }
 
@@ -331,36 +470,71 @@ pub fn reset_preset(name: String, state: State<'_, AppContext>) -> serde_json::V
         let mut dsp = state.dsp.lock();
         dsp.reset();
         dsp.update_options(dsp_opts);
+        drop(presets);
+        drop(dsp);
+        persist_voice_settings(&state);
+        let presets = state.presets.lock();
         serde_json::json!({ "ok": true, "presets": *presets, "config": def_cfg })
     } else {
-        serde_json::json!({ "ok": false, "error": "Preset cannot be reset" })
+        serde_json::json!({ "ok": false, "error": "Only default presets can be reset" })
     }
 }
 
 #[tauri::command]
 pub fn create_preset(name: String, config: PresetConfig, state: State<'_, AppContext>) -> serde_json::Value {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return serde_json::json!({ "ok": false, "error": "Name cannot be empty" });
+    }
+    if get_default_presets().contains_key(&name) {
+        return serde_json::json!({ "ok": false, "error": "Cannot overwrite built-in preset" });
+    }
     let mut presets = state.presets.lock();
     presets.insert(name.clone(), config);
     *state.active_preset.lock() = name.clone();
+    drop(presets);
+    persist_voice_settings(&state);
+    let presets = state.presets.lock();
     serde_json::json!({ "ok": true, "name": name, "presets": *presets })
 }
 
 #[tauri::command]
 pub fn save_preset(name: String, config: PresetConfig, state: State<'_, AppContext>) -> serde_json::Value {
+    let name = name.trim().to_string();
+    if name.is_empty() {
+        return serde_json::json!({ "ok": false, "error": "Name cannot be empty" });
+    }
     let mut presets = state.presets.lock();
     presets.insert(name, config);
+    drop(presets);
+    persist_voice_settings(&state);
+    let presets = state.presets.lock();
     serde_json::json!({ "ok": true, "presets": *presets })
 }
 
 #[tauri::command]
 pub fn delete_preset(name: String, state: State<'_, AppContext>) -> serde_json::Value {
+    if get_default_presets().contains_key(&name) {
+        return serde_json::json!({ "ok": false, "error": "Cannot delete built-in preset" });
+    }
     let mut presets = state.presets.lock();
+    if !presets.contains_key(&name) {
+        return serde_json::json!({ "ok": false, "error": "Preset not found" });
+    }
     presets.remove(&name);
     let mut active = state.active_preset.lock();
     if *active == name {
         *active = "Clean".to_string();
+        if let Some(clean) = presets.get("Clean").cloned().or_else(|| get_default_presets().get("Clean").cloned()) {
+            state.dsp.lock().update_options(preset_to_dsp_options(&clean));
+        }
     }
-    serde_json::json!({ "ok": true, "presets": *presets, "active": *active })
+    let active_name = active.clone();
+    drop(active);
+    drop(presets);
+    persist_voice_settings(&state);
+    let presets = state.presets.lock();
+    serde_json::json!({ "ok": true, "presets": *presets, "active": active_name })
 }
 
 #[tauri::command]
@@ -386,7 +560,7 @@ pub fn add_sound_file(state: State<'_, AppContext>) -> serde_json::Value {
     }
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn add_sound_data(filename: String, base64_data: String, state: State<'_, AppContext>) -> serde_json::Value {
     let clean_b64 = if let Some(idx) = base64_data.find(",") {
         &base64_data[idx + 1..]
@@ -399,17 +573,30 @@ pub fn add_sound_data(filename: String, base64_data: String, state: State<'_, Ap
         Err(e) => return serde_json::json!({ "ok": false, "error": format!("Invalid base64: {}", e) }),
     };
 
-    let temp_dest = state.soundboard_manager.sounds_dir.join(&filename);
+    // Stage into the system temp dir first; SoundboardManager copies it into
+    // the library with a unique `{id}_` prefix (Python parity), so concurrent
+    // drops of same-named files can never collide.
+    let safe_name = Path::new(&filename)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "dropped-audio".to_string());
+    let temp_dest = std::env::temp_dir().join(format!(
+        "audiover-drop-{}-{}",
+        std::process::id(),
+        safe_name
+    ));
     if let Err(e) = fs::write(&temp_dest, bytes) {
         return serde_json::json!({ "ok": false, "error": format!("Failed to write file: {}", e) });
     }
 
     let p_str = temp_dest.to_string_lossy().to_string();
-    if let Some(sound) = state.soundboard_manager.add_sound_file(&p_str, None, false, None, 1.0, false) {
+    let result = if let Some(sound) = state.soundboard_manager.add_sound_file(&p_str, Some(safe_name.as_str()), true, None, 1.0, false) {
         serde_json::json!({ "ok": true, "sound": sound })
     } else {
         serde_json::json!({ "ok": false, "error": "Could not decode sound" })
-    }
+    };
+    let _ = fs::remove_file(&temp_dest);
+    result
 }
 
 #[tauri::command]
@@ -437,7 +624,7 @@ pub fn get_all_progress(state: State<'_, AppContext>) -> HashMap<String, SoundPr
     state.soundboard_player.get_all_progress()
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 pub fn update_sound(
     id: String,
     volume: Option<f32>,
@@ -445,6 +632,15 @@ pub fn update_sound(
     hotkey: Option<String>,
     state: State<'_, AppContext>,
 ) -> serde_json::Value {
+    // Python parity: hotkeys are stored normalized (uppercased, trimmed).
+    let hotkey = hotkey.map(|h| {
+        let clean = h.trim().to_uppercase();
+        if clean.is_empty() {
+            String::new()
+        } else {
+            clean
+        }
+    });
     let ok = state.soundboard_manager.update_sound(&id, volume, loop_val, hotkey);
     serde_json::json!({ "ok": ok })
 }
@@ -457,41 +653,236 @@ pub fn remove_sound(id: String, state: State<'_, AppContext>) -> serde_json::Val
 
 #[tauri::command]
 pub fn get_audio_devices(state: State<'_, AppContext>) -> AudioDevicesState {
-    state.stream_engine.get_devices_state()
+    let mut devices = state.stream_engine.get_devices_state();
+    // Python parity: hide Audiover's internal virtual devices from the UI.
+    devices.inputs.retain(|d| !is_virtual_device_name(&d.name));
+    devices.outputs.retain(|d| !is_virtual_device_name(&d.name));
+    devices
 }
 
 #[tauri::command]
 pub fn set_input_device(index: usize, state: State<'_, AppContext>) {
     state.stream_engine.set_input_device(index);
+    persist_audio_settings(&state);
 }
 
 #[tauri::command]
 pub fn set_monitor_device(index: Option<usize>, state: State<'_, AppContext>) {
     state.stream_engine.set_monitor_device(index);
+    persist_audio_settings(&state);
 }
 
 #[tauri::command]
 pub fn set_buffer_size(size: usize, state: State<'_, AppContext>) {
     state.stream_engine.set_buffer_size(size);
+    persist_audio_settings(&state);
 }
 
 #[tauri::command]
 pub fn set_mic_gain(gain: f32, state: State<'_, AppContext>) {
     state.stream_engine.set_mic_gain(gain);
+    persist_audio_settings(&state);
 }
 
 #[tauri::command]
 pub fn set_monitor_gain(gain: f32, state: State<'_, AppContext>) {
     state.stream_engine.set_monitor_gain(gain);
+    persist_audio_settings(&state);
 }
 
 #[tauri::command]
 pub fn get_hotkey_status(state: State<'_, AppContext>) -> HotkeyStatus {
-    state.hotkey_manager.get_status()
+    let status = state.hotkey_manager.get_status();
+    // Python parity: the UI matches on these fixed action labels
+    // (HotkeysPage.getActionLabel), so report them explicitly instead of
+    // echoing raw key names.
+    let fixed = vec![
+        HotkeyItem {
+            action: "Mute Microphone".to_string(),
+            key: "F9".to_string(),
+        },
+        HotkeyItem {
+            action: "Bypass All DSP Effects".to_string(),
+            key: "F10".to_string(),
+        },
+        HotkeyItem {
+            action: "Stop All Sounds (Panic)".to_string(),
+            key: "F11".to_string(),
+        },
+        HotkeyItem {
+            action: "Toggle Hear Myself (Loopback)".to_string(),
+            key: "F8".to_string(),
+        },
+    ];
+    HotkeyStatus {
+        backend: status.backend,
+        has_permission: status.has_permission,
+        is_running: status.is_running,
+        hotkeys: fixed,
+    }
 }
 
 #[tauri::command]
 pub fn trigger_hotkey(key: String, state: State<'_, AppContext>) -> serde_json::Value {
     let ok = state.hotkey_manager.trigger(&key);
     serde_json::json!({ "ok": ok })
+}
+
+// ─────────────────────────────────────────────────────────────
+// Logs & diagnostics (in-app log viewer on the Logs page)
+// ─────────────────────────────────────────────────────────────
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn get_logs(since_seq: Option<u64>, state: State<'_, AppContext>) -> Vec<LogEntry> {
+    state.log_buffer.tail_since(since_seq)
+}
+
+#[tauri::command]
+pub fn clear_logs(state: State<'_, AppContext>) {
+    state.log_buffer.clear();
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Diagnostics {
+    pub app_version: String,
+    pub engine_active: bool,
+    pub is_muted: bool,
+    pub hear_myself: bool,
+    pub hear_soundboard: bool,
+    pub mic_gain: f32,
+    pub monitor_gain: f32,
+    pub block_size: usize,
+    pub sample_rate: u32,
+    pub selected_input: Option<String>,
+    pub selected_monitor: Option<String>,
+    pub input_count: usize,
+    pub output_count: usize,
+    pub current_input: Option<usize>,
+    pub current_monitor: Option<usize>,
+    pub virtual_sink_found: bool,
+    pub pactl_available: bool,
+    pub active_preset: String,
+    pub preset_count: usize,
+    pub language: String,
+    pub hotkey_backend: String,
+    pub hotkey_permission: bool,
+    pub log_entries: usize,
+    pub config_path: String,
+}
+
+#[tauri::command]
+pub fn get_diagnostics(state: State<'_, AppContext>) -> Diagnostics {
+    let engine = &state.stream_engine;
+    let devices = engine.get_devices_state();
+    let hk = state.hotkey_manager.get_status();
+    let pactl_available = std::process::Command::new("pactl")
+        .arg("info")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    Diagnostics {
+        app_version: env!("CARGO_PKG_VERSION").to_string(),
+        engine_active: engine.is_running.load(Ordering::SeqCst),
+        is_muted: engine.is_muted.load(Ordering::SeqCst),
+        hear_myself: engine.hear_myself.load(Ordering::Relaxed),
+        hear_soundboard: engine.hear_soundboard.load(Ordering::Relaxed),
+        mic_gain: engine.get_mic_gain(),
+        monitor_gain: engine.get_monitor_gain(),
+        block_size: engine.get_block_size(),
+        sample_rate: engine.sample_rate,
+        selected_input: engine.selected_input_name(),
+        selected_monitor: engine.selected_monitor_name(),
+        input_count: devices.inputs.len(),
+        output_count: devices.outputs.len(),
+        current_input: devices.current_input,
+        current_monitor: devices.current_monitor,
+        virtual_sink_found: AudioStreamEngine::is_virtual_sink_available(),
+        pactl_available,
+        active_preset: state.active_preset.lock().clone(),
+        preset_count: state.presets.lock().len(),
+        language: state.language.lock().clone(),
+        hotkey_backend: hk.backend,
+        hotkey_permission: hk.has_permission,
+        log_entries: state.log_buffer.len(),
+        config_path: state.config_path.to_string_lossy().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_context(config_path: PathBuf) -> AppContext {
+        let dsp = Arc::new(Mutex::new(VoiceDSP::new(48000, 256)));
+        let player = Arc::new(SoundboardPlayer::new(48000));
+        let sounds_dir = config_path.parent().unwrap().join("sounds");
+        let manager = Arc::new(SoundboardManager::new(
+            config_path.clone(),
+            sounds_dir,
+            player.clone(),
+        ));
+        let engine = Arc::new(AudioStreamEngine::new(48000, 256, dsp.clone(), player.clone()));
+        AppContext {
+            stream_engine: engine,
+            soundboard_player: player,
+            soundboard_manager: manager,
+            hotkey_manager: Arc::new(HotkeyManager::new()),
+            dsp,
+            active_preset: Mutex::new("Clean".to_string()),
+            presets: Mutex::new(get_default_presets()),
+            language: Mutex::new("tr".to_string()),
+            config_path,
+            log_buffer: Arc::new(LogBuffer::new()),
+        }
+    }
+
+    fn temp_config_path(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "audiover-test-{}-{}",
+            std::process::id(),
+            tag
+        ));
+        let _ = fs::create_dir_all(&dir);
+        dir.join("settings.json")
+    }
+
+    #[test]
+    fn audio_settings_round_trip() {
+        let path = temp_config_path("audio");
+        let _ = fs::remove_file(&path);
+        let ctx = test_context(path.clone());
+        ctx.stream_engine.set_mic_gain(1.5);
+        ctx.stream_engine.set_monitor_gain(0.5);
+        ctx.stream_engine.set_hear_myself(true);
+        ctx.stream_engine.set_buffer_size(512);
+        persist_audio_settings(&ctx);
+
+        let loaded = load_persisted_audio(&path);
+        assert_eq!(loaded["mic_gain"].as_f64().unwrap(), 1.5);
+        assert_eq!(loaded["monitor_gain"].as_f64().unwrap(), 0.5);
+        assert_eq!(loaded["hear_myself"].as_bool().unwrap(), true);
+        assert_eq!(loaded["block_size"].as_u64().unwrap(), 512);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn voice_settings_round_trip_with_custom_preset() {
+        let path = temp_config_path("voice");
+        let _ = fs::remove_file(&path);
+        let ctx = test_context(path.clone());
+        let mut custom = get_default_presets()["Clean"].clone();
+        custom.pitch = -7.0;
+        ctx.presets.lock().insert("MyVoice".to_string(), custom);
+        *ctx.active_preset.lock() = "MyVoice".to_string();
+        *ctx.language.lock() = "en".to_string();
+        persist_voice_settings(&ctx);
+        persist_language(&ctx);
+
+        let (customs, active, language) = load_persisted_voice_and_app(&path);
+        assert_eq!(customs["MyVoice"].pitch, -7.0);
+        assert!(!customs.contains_key("Clean"));
+        assert_eq!(active.as_deref(), Some("MyVoice"));
+        assert_eq!(language.as_deref(), Some("en"));
+        let _ = fs::remove_file(&path);
+    }
 }

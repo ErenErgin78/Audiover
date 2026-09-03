@@ -47,7 +47,12 @@ impl AudioRouter {
         };
 
         for line in output.lines() {
-            if line.contains(&self.sink_name) || line.contains(&self.source_name) {
+            // Match the specific device names plus any generic Audiover
+            // leftover (Python parity: crash leftovers are fully cleaned).
+            if line.contains(&self.sink_name)
+                || line.contains(&self.source_name)
+                || line.contains("Audiover")
+            {
                 if let Some(id) = line.split_whitespace().next() {
                     info!("Unloading leftover virtual audio module ID: {}", id);
                     let _ = Command::new("pactl").args(["unload-module", id]).output();

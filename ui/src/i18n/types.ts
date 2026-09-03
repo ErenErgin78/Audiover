@@ -5,6 +5,7 @@ export interface TranslationSchema {
     audio: string;
     hotkeys: string;
     settings: string;
+    logs: string;
   };
   header: {
     engineActive: string;
@@ -124,5 +125,42 @@ export interface TranslationSchema {
   };
   app: {
     connecting: string;
+    connectionFailedTitle: string;
+    connectionFailedBody: string;
+    backendKindLabel: string;
+    devServerLabel: string;
+    devServerReachable: string;
+    devServerUnreachable: string;
+    retryButton: string;
+    launchHelpDev: string;
+    launchHelpInstalled: string;
+  };
+  logs: {
+    title: string;
+    statusCard: string;
+    backendRow: string;
+    backendTauri: string;
+    backendPyWebView: string;
+    backendNone: string;
+    engineRow: string;
+    engineOn: string;
+    engineOff: string;
+    virtualSinkRow: string;
+    found: string;
+    missing: string;
+    pactlRow: string;
+    devicesRow: string;
+    hotkeyRow: string;
+    viewerCard: string;
+    levelAll: string;
+    pause: string;
+    resume: string;
+    clear: string;
+    copy: string;
+    copied: string;
+    empty: string;
+    diagCard: string;
+    diagCopy: string;
+    pywebviewUnsupported: string;
   };
 }

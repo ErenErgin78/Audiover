@@ -1,4 +1,4 @@
-Name:           audiover
+Name:           audiover_rust
 Version:        1.0.0
 Release:        1%{?dist}
 Summary:        Real-Time Voice Changer & Soundboard Engine for Linux / PipeWire
