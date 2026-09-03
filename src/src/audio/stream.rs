@@ -531,6 +531,7 @@ impl AudioStreamEngine {
             }
             let format = def.sample_format();
             let mut cfg = def.config();
+            cfg.channels = 2;
             cfg.buffer_size = BufferSize::Default;
             return Some((cfg, format));
         }
@@ -575,6 +576,7 @@ impl AudioStreamEngine {
             best.with_max_sample_rate()
         };
         let mut cfg = supported.config();
+        cfg.channels = 2;
         cfg.buffer_size = buf;
         Some((cfg, format))
     }
