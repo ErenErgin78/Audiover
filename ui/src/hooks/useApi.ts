@@ -208,6 +208,7 @@ export interface Diagnostics {
   monitor_gain: number;
   block_size: number;
   sample_rate: number;
+  effective_sample_rate: number;
   selected_input: string | null;
   selected_monitor: string | null;
   input_count: number;

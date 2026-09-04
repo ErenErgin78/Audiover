@@ -1,8 +1,13 @@
 use log::{error, info, warn};
+use rubato::{
+    audioadapter::Adapter, audioadapter_buffers::direct::InterleavedSlice, Async, FixedAsync,
+    PolynomialDegree, Resampler,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use symphonia::core::codecs::audio::AudioDecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::probe::Hint;
@@ -25,19 +30,63 @@ pub struct SoundTrack {
     pub volume: f32,
     pub loop_playback: bool,
     pub is_playing: bool,
+    pub raw_audio_data: Vec<[f32; 2]>,
+    pub raw_sample_rate: u32,
 }
 
 pub struct SoundboardPlayer {
-    target_sample_rate: u32,
+    target_sample_rate: AtomicU32,
     tracks: parking_lot::RwLock<HashMap<String, SoundTrack>>,
 }
 
 impl SoundboardPlayer {
     pub fn new(target_sample_rate: u32) -> Self {
         Self {
-            target_sample_rate,
+            target_sample_rate: AtomicU32::new(target_sample_rate.max(4000)),
             tracks: parking_lot::RwLock::new(HashMap::new()),
         }
+    }
+
+    pub fn target_sample_rate(&self) -> u32 {
+        self.target_sample_rate.load(Ordering::Relaxed)
+    }
+
+    /// Retargets already-loaded tracks to the sample rate actually
+    /// negotiated with the audio device. Without this, tracks decoded at
+    /// 48 kHz but consumed at e.g. 16 kHz play back 3x too fast with
+    /// dropouts — the classic "robotic soundboard" symptom. Same-rate
+    /// calls are a no-op so repeated engine restarts never degrade quality
+    /// through cumulative resampling.
+    pub fn set_target_sample_rate(&self, sample_rate: u32) {
+        let new_rate = sample_rate.clamp(4000, 192000);
+        let old_rate = self.target_sample_rate.swap(new_rate, Ordering::SeqCst);
+        if old_rate == new_rate {
+            return;
+        }
+        let mut tracks = self.tracks.write();
+        for track in tracks.values_mut() {
+            if track.raw_audio_data.is_empty() && track.audio_data.is_empty() {
+                track.duration_sec = 0.0;
+                track.position = 0;
+                continue;
+            }
+            // Use pristine decoded original to eliminate cumulative generational loss
+            let (source_data, source_rate) = if !track.raw_audio_data.is_empty() && track.raw_sample_rate > 0 {
+                (&track.raw_audio_data, track.raw_sample_rate)
+            } else {
+                (&track.audio_data, old_rate)
+            };
+
+            track.audio_data = resample_stereo(source_data, source_rate, new_rate);
+            track.duration_sec = track.audio_data.len() as f32 / new_rate as f32;
+            track.position = track.position.min(track.audio_data.len());
+        }
+        info!(
+            "Soundboard retargeted {} tracks: {} Hz -> {} Hz",
+            tracks.len(),
+            old_rate,
+            new_rate
+        );
     }
 
     pub fn load_sound(
@@ -58,7 +107,7 @@ impl SoundboardPlayer {
             .map(|s| s.to_string())
             .unwrap_or_else(|| path.file_stem().unwrap_or_default().to_string_lossy().to_string());
 
-        let (mut raw_stereo, sr) = match decode_audio_file(path) {
+        let (raw_stereo, sr) = match decode_audio_file(path) {
             Ok(res) => res,
             Err(e) => {
                 error!("Failed to decode audio file {}: {}", file_path, e);
@@ -67,24 +116,29 @@ impl SoundboardPlayer {
         };
 
         // Resample if needed
-        if sr != self.target_sample_rate && !raw_stereo.is_empty() {
-            raw_stereo = resample_stereo(&raw_stereo, sr, self.target_sample_rate);
-        }
+        let target_rate = self.target_sample_rate();
+        let audio_data = if sr != target_rate && !raw_stereo.is_empty() {
+            resample_stereo(&raw_stereo, sr, target_rate)
+        } else {
+            raw_stereo.clone()
+        };
 
-        let duration_sec = if self.target_sample_rate > 0 {
-            raw_stereo.len() as f32 / self.target_sample_rate as f32
+        let duration_sec = if target_rate > 0 {
+            audio_data.len() as f32 / target_rate as f32
         } else {
             0.0
         };
 
         let track = SoundTrack {
             name: sound_name,
-            audio_data: raw_stereo,
+            audio_data,
             duration_sec,
             position: 0,
             volume: volume.clamp(0.0, 2.0),
             loop_playback,
             is_playing: false,
+            raw_audio_data: raw_stereo,
+            raw_sample_rate: sr,
         };
 
         self.tracks.write().insert(sound_id.to_string(), track.clone());
@@ -295,8 +349,66 @@ fn decode_audio_file(path: &Path) -> Result<(Vec<[f32; 2]>, u32), String> {
     Ok((stereo_samples, sample_rate))
 }
 
-/// Resample stereo audio from in_sr to out_sr
-fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32; 2]> {
+/// Resample stereo audio from in_sr to out_sr using high-order Septic polynomial interpolation (rubato)
+pub fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32; 2]> {
+    if input.is_empty() || in_sr == out_sr {
+        return input.to_vec();
+    }
+
+    let in_sr_f = in_sr.max(4000) as f64;
+    let out_sr_f = out_sr.max(4000) as f64;
+    let ratio = out_sr_f / in_sr_f;
+
+    let flat_input: &[f32] = unsafe {
+        std::slice::from_raw_parts(input.as_ptr() as *const f32, input.len() * 2)
+    };
+
+    let input_adapter = match InterleavedSlice::new(flat_input, 2, input.len()) {
+        Ok(a) => a,
+        Err(_) => return fallback_resample_stereo(input, in_sr, out_sr),
+    };
+
+    let chunk_size = input.len().clamp(64, 1024);
+    let mut resampler = match Async::<f32>::new_poly(
+        ratio,
+        1.1,
+        PolynomialDegree::Septic,
+        chunk_size,
+        2,
+        FixedAsync::Input,
+    ) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!(
+                "Failed to initialize polynomial resampler ({} Hz -> {} Hz): {}, using fallback",
+                in_sr, out_sr, e
+            );
+            return fallback_resample_stereo(input, in_sr, out_sr);
+        }
+    };
+
+    match resampler.process_all(&input_adapter, input.len(), None) {
+        Ok(output) => {
+            let frames = output.frames();
+            let data = output.take_data();
+            let mut result = Vec::with_capacity(frames);
+            for chunk in data.chunks_exact(2) {
+                result.push([chunk[0], chunk[1]]);
+            }
+            result
+        }
+        Err(e) => {
+            warn!(
+                "Polynomial resampling failed ({} Hz -> {} Hz): {}, using fallback",
+                in_sr, out_sr, e
+            );
+            fallback_resample_stereo(input, in_sr, out_sr)
+        }
+    }
+}
+
+/// Fallback resampler using Catmull-Rom cubic Hermite interpolation
+fn fallback_resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32; 2]> {
     if input.is_empty() || in_sr == out_sr {
         return input.to_vec();
     }
@@ -304,15 +416,39 @@ fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32; 2]>
     let ratio = out_sr as f64 / in_sr as f64;
     let target_len = ((input.len() as f64) * ratio).round() as usize;
     let mut output = Vec::with_capacity(target_len);
+    let n = input.len();
+
+    let hermite = |p0: f32, p1: f32, p2: f32, p3: f32, t: f32| -> f32 {
+        let c0 = p1;
+        let c1 = 0.5 * (p2 - p0);
+        let c2 = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
+        let c3 = 0.5 * (p3 - p0) + 1.5 * (p1 - p2);
+        ((c3 * t + c2) * t + c1) * t + c0
+    };
 
     for i in 0..target_len {
         let src_idx = (i as f64) / ratio;
-        let idx0 = (src_idx.floor() as usize).min(input.len() - 1);
-        let idx1 = (idx0 + 1).min(input.len() - 1);
+        let idx1 = src_idx.floor() as usize;
+        let idx1 = idx1.min(n - 1);
+        let idx0 = idx1.saturating_sub(1);
+        let idx2 = (idx1 + 1).min(n - 1);
+        let idx3 = (idx1 + 2).min(n - 1);
         let frac = (src_idx - src_idx.floor()) as f32;
 
-        let l = input[idx0][0] * (1.0 - frac) + input[idx1][0] * frac;
-        let r = input[idx0][1] * (1.0 - frac) + input[idx1][1] * frac;
+        let l = hermite(
+            input[idx0][0],
+            input[idx1][0],
+            input[idx2][0],
+            input[idx3][0],
+            frac,
+        );
+        let r = hermite(
+            input[idx0][1],
+            input[idx1][1],
+            input[idx2][1],
+            input[idx3][1],
+            frac,
+        );
         output.push([l, r]);
     }
 
@@ -324,16 +460,20 @@ mod tests {
     use super::*;
 
     fn insert_test_track(player: &SoundboardPlayer, id: &str, frames: usize) {
+        let data = vec![[0.5, 0.5]; frames];
+        let sr = player.target_sample_rate();
         player.tracks.write().insert(
             id.to_string(),
             SoundTrack {
                 name: id.to_string(),
-                audio_data: vec![[0.5, 0.5]; frames],
-                duration_sec: frames as f32 / 48000.0,
+                audio_data: data.clone(),
+                duration_sec: frames as f32 / sr as f32,
                 position: 0,
                 volume: 1.0,
                 loop_playback: false,
                 is_playing: false,
+                raw_audio_data: data,
+                raw_sample_rate: sr,
             },
         );
     }
@@ -374,5 +514,48 @@ mod tests {
         // per input block and shares the result (no double-speed playback).
         assert_eq!(player.tracks.read()["s1"].position, 256);
         assert!(buf.iter().all(|f| f[0] == 0.5 && f[1] == 0.5));
+    }
+
+    #[test]
+    fn retarget_rescales_tracks_and_stays_idempotent() {
+        let player = SoundboardPlayer::new(48000);
+        insert_test_track(&player, "s1", 4800); // 0.1 s @ 48 kHz
+        player.play("s1");
+        player.set_target_sample_rate(16000);
+        assert_eq!(player.target_sample_rate(), 16000);
+        // 4800 frames @ 48 kHz -> ~1600 frames @ 16 kHz, same duration.
+        {
+            let tracks = player.tracks.read();
+            let track = &tracks["s1"];
+            assert!((track.audio_data.len() as i32 - 1600).abs() <= 2);
+            assert!((track.duration_sec - 0.1).abs() < 0.002);
+        }
+        // Repeated restarts must not resample again (no quality decay).
+        let snapshot = player.tracks.read()["s1"].audio_data.clone();
+        player.set_target_sample_rate(16000);
+        assert_eq!(player.tracks.read()["s1"].audio_data, snapshot);
+        // Back to 48 kHz restores the original length.
+        player.set_target_sample_rate(48000);
+        assert!((player.tracks.read()["s1"].audio_data.len() as i32 - 4800).abs() <= 2);
+    }
+
+    #[test]
+    fn test_resample_accuracy() {
+        // Generate a 440 Hz test tone at 44.1 kHz
+        let sr_in = 44100;
+        let sr_out = 48000;
+        let n_frames = 4410; // 0.1 sec
+        let mut original = Vec::with_capacity(n_frames);
+        for i in 0..n_frames {
+            let t = i as f32 / sr_in as f32;
+            let val = (2.0 * std::f32::consts::PI * 440.0 * t).sin();
+            original.push([val, -val]);
+        }
+
+        let resampled = resample_stereo(&original, sr_in, sr_out);
+        let expected_frames = (n_frames as f64 * sr_out as f64 / sr_in as f64).round() as usize;
+        assert!((resampled.len() as i32 - expected_frames as i32).abs() <= 2);
+        // Verify channel integrity
+        assert!((resampled[100][0] + resampled[100][1]).abs() < 1e-4);
     }
 }

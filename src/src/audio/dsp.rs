@@ -410,6 +410,26 @@ impl VoiceDSP {
         self.options = options;
     }
 
+    /// Retunes the engine to the sample rate actually negotiated with the
+    /// audio device. All delay lines and filter coefficients depend on the
+    /// rate, so running 48 kHz-tuned state on e.g. a 16 kHz Bluetooth mic
+    /// detunes every effect (metallic/robotic voice) and desyncs consumers.
+    /// Same-rate calls are a no-op so repeated engine restarts are free.
+    pub fn set_sample_rate(&mut self, sample_rate: usize) {
+        let sr = sample_rate.clamp(4000, 192000);
+        if sr == self.sample_rate {
+            return;
+        }
+        self.sample_rate = sr;
+        self.pitch_shifter = ContinuousPitchShifter::new(sr);
+        self.reverb = SchroederReverb::new(sr);
+        self.chorus = ChorusEffect::new(sr);
+        self.radio_filter =
+            BiquadFilter::new_butterworth_bandpass(sr as f32, 300.0, 3400.0);
+        self.robot_carrier_phase = 0.0;
+        self.noise_gate_envelope = -100.0;
+    }
+
     pub fn reset(&mut self) {
         self.pitch_shifter.reset();
         self.reverb.reset();
@@ -587,5 +607,31 @@ mod tests {
         let mut output = vec![0.0; 256];
         dsp.process(&input, &mut output);
         assert!(output.iter().all(|&x| x.is_finite()));
+    }
+
+    #[test]
+    fn test_set_sample_rate_retunes_without_artifacts() {
+        let mut dsp = VoiceDSP::new(48000, 256);
+        dsp.options.robot_enabled = true;
+        dsp.options.radio_enabled = true;
+        dsp.options.reverb_enabled = true;
+        dsp.options.reverb_wet = 0.4;
+        dsp.options.chorus_enabled = true;
+        dsp.options.chorus_depth = 0.5;
+        dsp.options.pitch_semitones = -3.0;
+        // Same-rate call must be a no-op (keeps delay-line state).
+        dsp.set_sample_rate(48000);
+        assert_eq!(dsp.sample_rate, 48000);
+        // Retune to typical Bluetooth HSP rates: output must stay finite,
+        // i.e. no NaN/inf blow-ups from mismatched coefficients.
+        for sr in [16000, 8000] {
+            dsp.set_sample_rate(sr);
+            assert_eq!(dsp.sample_rate, sr);
+            let input = vec![0.15; 256];
+            let mut output = vec![0.0; 256];
+            dsp.process(&input, &mut output);
+            dsp.process(&input, &mut output);
+            assert!(output.iter().all(|&x| x.is_finite()));
+        }
     }
 }

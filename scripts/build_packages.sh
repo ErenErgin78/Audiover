@@ -96,7 +96,26 @@ if [ ! -f "$PROJECT_ROOT/src/icons/32x32.png" ]; then
     rm -rf "$PROJECT_ROOT/src/icons/android" "$PROJECT_ROOT/src/icons/ios"
 fi
 
-# 4. Execute Tauri build
+# 4. Clean stale bundle outputs and execute Tauri build
+mkdir -p "$DIST_DIR"
+if [ -n "$TARGET_BUNDLES" ]; then
+    IFS=',' read -ra BUNDLE_ARR <<< "$TARGET_BUNDLES"
+    for b in "${BUNDLE_ARR[@]}"; do
+        b_clean="$(echo "$b" | xargs)"
+        if [ -n "$b_clean" ]; then
+            rm -rf "$BUNDLE_DIR/$b_clean"
+            case "$b_clean" in
+                rpm) rm -f "$DIST_DIR"/*.rpm ;;
+                deb) rm -f "$DIST_DIR"/*.deb ;;
+                appimage) rm -f "$DIST_DIR"/*.AppImage ;;
+            esac
+        fi
+    done
+else
+    rm -rf "$BUNDLE_DIR"
+    rm -f "$DIST_DIR"/*.rpm "$DIST_DIR"/*.deb "$DIST_DIR"/*.AppImage 2>/dev/null || true
+fi
+
 echo "[+] Running Tauri build..."
 BUILD_ARGS=()
 if [ -n "$TARGET_BUNDLES" ]; then
@@ -109,14 +128,13 @@ fi
 npx --prefix "$PROJECT_ROOT/ui" tauri build "${BUILD_ARGS[@]}"
 
 # 5. Collect artifacts into dist/
-mkdir -p "$DIST_DIR"
 echo ""
 echo "[+] Collecting built packages into $DIST_DIR..."
 
 FOUND_PACKAGES=0
 if [ -d "$BUNDLE_DIR" ]; then
     while IFS= read -r -d '' file; do
-        cp "$file" "$DIST_DIR/"
+        cp -p "$file" "$DIST_DIR/"
         FOUND_PACKAGES=$((FOUND_PACKAGES + 1))
     done < <(find "$BUNDLE_DIR" -type f \( -name "*.rpm" -o -name "*.deb" -o -name "*.AppImage" \) -print0)
 fi

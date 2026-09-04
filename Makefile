@@ -25,6 +25,8 @@ dev: ## Start Audiover in local development mode (React Vite + Tauri)
 build: ## Build release packages for all configured targets (rpm, deb, appimage)
 	@bash scripts/build_packages.sh
 
+APP_VERSION ?= $(shell grep -m1 '"version"' src/tauri.conf.json 2>/dev/null | cut -d '"' -f 4)
+
 build-rpm: ## Build RPM package only
 	@bash scripts/build_packages.sh rpm
 
@@ -35,7 +37,10 @@ install-rpm: build-rpm ## Build RPM and reinstall on local system (sudo dnf)
 		echo "[*] Mevcut surum kaldiriliyor..."; \
 		sudo dnf remove -y audiover; \
 	fi
-	@RPM_FILE=$$(ls -t dist/Audiover-*.rpm 2>/dev/null | head -n 1); \
+	@RPM_FILE=$$(ls dist/Audiover-$${APP_VERSION:-*}-*.rpm dist/audiover-$${APP_VERSION:-*}-*.rpm 2>/dev/null | sort -V | tail -n 1); \
+	if [ -z "$$RPM_FILE" ]; then \
+		RPM_FILE=$$(ls dist/Audiover-*.rpm dist/audiover-*.rpm 2>/dev/null | sort -V | tail -n 1); \
+	fi; \
 	if [ -n "$$RPM_FILE" ]; then \
 		echo "[*] Yeni paket kuruluyor: $$RPM_FILE..."; \
 		sudo dnf install -y "$$RPM_FILE"; \
@@ -53,7 +58,10 @@ build-deb: ## Build DEB package only
 install-deb: build-deb ## Build DEB and reinstall on local system (sudo apt)
 	@echo "[+] Installing Audiover DEB package..."
 	@rm -f ~/.local/share/applications/audiover.desktop ~/.local/share/applications/Audiover.desktop 2>/dev/null || true
-	@DEB_FILE=$$(ls -t dist/Audiover_*.deb 2>/dev/null | head -n 1); \
+	@DEB_FILE=$$(ls dist/Audiover_$${APP_VERSION:-*}_*.deb dist/audiover_$${APP_VERSION:-*}_*.deb 2>/dev/null | sort -V | tail -n 1); \
+	if [ -z "$$DEB_FILE" ]; then \
+		DEB_FILE=$$(ls dist/Audiover_*.deb dist/audiover_*.deb dist/Audiover-*.deb dist/audiover-*.deb 2>/dev/null | sort -V | tail -n 1); \
+	fi; \
 	if [ -n "$$DEB_FILE" ]; then \
 		echo "[*] Yeni paket kuruluyor: $$DEB_FILE..."; \
 		sudo apt-get update -qq 2>/dev/null || true; \
@@ -72,7 +80,10 @@ build-appimage: ## Build AppImage package only
 install-appimage: build-appimage ## Build AppImage and integrate to user system (~/.local/bin)
 	@echo "[+] Installing Audiover AppImage to ~/.local/bin and desktop menu..."
 	@mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps ~/.local/share/icons/hicolor/256x256/apps
-	@APPIMAGE_PATH=$$(ls -t dist/Audiover_*.AppImage 2>/dev/null | head -n 1); \
+	@APPIMAGE_PATH=$$(ls dist/Audiover_$${APP_VERSION:-*}_*.AppImage dist/audiover_$${APP_VERSION:-*}_*.AppImage dist/Audiover-$${APP_VERSION:-*}*.AppImage 2>/dev/null | sort -V | tail -n 1); \
+	if [ -z "$$APPIMAGE_PATH" ]; then \
+		APPIMAGE_PATH=$$(ls dist/Audiover_*.AppImage dist/audiover_*.AppImage dist/Audiover-*.AppImage dist/audiover-*.AppImage 2>/dev/null | sort -V | tail -n 1); \
+	fi; \
 	if [ -n "$$APPIMAGE_PATH" ]; then \
 		cp "$$APPIMAGE_PATH" ~/.local/bin/audiover && chmod +x ~/.local/bin/audiover; \
 	fi
