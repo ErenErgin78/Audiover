@@ -88,11 +88,17 @@ export default function AudioSettingsPage() {
     background: "var(--bg-surface)",
     border: "1px solid var(--border)",
     color: "var(--text)",
+    colorScheme: "dark",
     borderRadius: 8,
     padding: "6px 10px",
     fontSize: 12,
     flex: 1,
     outline: "none",
+  } as React.CSSProperties;
+
+  const optionStyle = {
+    backgroundColor: "#161824",
+    color: "#E0E6ED",
   } as React.CSSProperties;
 
   return (
@@ -110,7 +116,7 @@ export default function AudioSettingsPage() {
             style={selectStyle}
           >
             {devState.inputs.map((d) => (
-              <option key={d.index} value={d.index}>
+              <option key={d.index} value={d.index} style={optionStyle}>
                 [{d.index}] {d.name}{d.is_default ? " (Default)" : ""}
               </option>
             ))}
@@ -122,9 +128,9 @@ export default function AudioSettingsPage() {
             onChange={(e) => handleMonitorChange(e.target.value)}
             style={selectStyle}
           >
-            <option value="null">{t.audio.noneDisabled}</option>
+            <option value="null" style={optionStyle}>{t.audio.noneDisabled}</option>
             {devState.outputs.map((d) => (
-              <option key={d.index} value={d.index}>
+              <option key={d.index} value={d.index} style={optionStyle}>
                 [{d.index}] {d.name}{d.is_default ? " (Default)" : ""}
               </option>
             ))}
@@ -169,7 +175,7 @@ export default function AudioSettingsPage() {
             style={selectStyle}
           >
             {bufferOptions.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value} style={optionStyle}>{o.label}</option>
             ))}
           </select>
         </Row>

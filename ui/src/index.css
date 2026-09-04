@@ -2,6 +2,7 @@
 
 /* ── Design Tokens ──────────────────────────────────────────── */
 :root {
+  color-scheme: dark;
   --bg-base:    #0F111A;
   --bg-card:    #181A27;
   --bg-surface: #1B1E2E;
@@ -25,6 +26,7 @@ html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
+  color-scheme: dark;
   background-color: var(--bg-base);
   color: var(--text);
   font-family: 'Inter', 'Segoe UI', 'Ubuntu', 'DejaVu Sans', sans-serif;
@@ -90,6 +92,7 @@ input[type="range"]::-moz-range-thumb {
 
 /* ── Select and Option Styling (Dark Dropdowns) ─────────────── */
 select {
+  color-scheme: dark;
   background-color: var(--bg-surface) !important;
   color: var(--text) !important;
   border: 1px solid var(--border) !important;
@@ -111,6 +114,7 @@ select:focus {
 
 select option,
 select optgroup {
+  color-scheme: dark;
   background-color: #161824 !important;
   color: #E0E6ED !important;
   padding: 6px 10px;
