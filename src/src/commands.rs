@@ -105,8 +105,9 @@ fn persist_audio_settings(state: &AppContext) {
         "hear_soundboard": engine.hear_soundboard.load(Ordering::Relaxed),
         "block_size": engine.get_block_size(),
         "input_device_name": engine.selected_input_name().and_then(|n| {
-            // Resolve the stored selection to a concrete device name when
-            // possible so it survives re-enumeration.
+            if is_virtual_device_name(&n) {
+                return None;
+            }
             let list = AudioStreamEngine::list_input_devices();
             list.into_iter().find(|d| {
                 let a = d.name.to_lowercase();
@@ -114,7 +115,13 @@ fn persist_audio_settings(state: &AppContext) {
                 a == b || a.contains(b.as_str())
             }).map(|d| d.name).or(Some(n))
         }),
-        "monitor_device_name": engine.selected_monitor_name(),
+        "monitor_device_name": engine.selected_monitor_name().and_then(|n| {
+            if n != "none" && is_virtual_device_name(&n) {
+                None
+            } else {
+                Some(n)
+            }
+        }),
     });
     write_settings_file(&state.config_path, &settings);
 }

@@ -102,29 +102,47 @@ fn get_device_name(dev: &Device) -> String {
         .unwrap_or_else(|| dev.to_string())
 }
 
-/// Returns true for Audiover's own virtual devices plus generic virtual
-/// endpoints. Mirrors the exclusion filters in Python
-/// (`resolve_input_device` / `resolve_monitor_device` / `get_audio_devices`).
+/// Returns true for Audiover's own virtual devices, ALSA null/dummy devices,
+/// and black-hole pseudo-devices that discard audio or produce silence.
 pub(crate) fn is_virtual_device_name(name: &str) -> bool {
-    let lower = name.to_lowercase();
+    let lower = name.trim().to_lowercase();
     lower.contains("audiover")
         || lower.contains("virtual_sink")
         || lower.contains("null_sink")
         || lower.contains("remap_source")
+        || lower.contains("discard all samples")
+        || lower.contains("generate zero samples")
+        || lower == "null"
+        || lower.contains("dummy")
 }
 
-/// Case-insensitive substring match, skipping virtual devices.
-/// Mirrors Python's `clean_saved in d_name` lookup (which survives
-/// re-enumeration renames, unlike exact matching).
+/// Checks both device description/driver and name to filter out unusable devices.
+pub(crate) fn is_unusable_or_virtual_device(dev: &Device) -> bool {
+    if let Ok(desc) = dev.description() {
+        if let Some(driver) = desc.driver() {
+            let drv = driver.trim().to_lowercase();
+            if drv == "null" || drv == "dummy" {
+                return true;
+            }
+        }
+        if is_virtual_device_name(desc.name()) {
+            return true;
+        }
+    }
+    let name = get_device_name(dev);
+    is_virtual_device_name(&name)
+}
+
+/// Case-insensitive substring match, skipping virtual and unusable devices.
 fn match_device_by_name(devices: Vec<Device>, saved: &str) -> Option<Device> {
     let clean = saved.trim().to_lowercase();
-    if clean.is_empty() {
+    if clean.is_empty() || is_virtual_device_name(&clean) {
         return None;
     }
     devices.into_iter().find(|d| {
         let name = get_device_name(d);
         let lower = name.to_lowercase();
-        (lower == clean || lower.contains(&clean as &str)) && !is_virtual_device_name(&name)
+        (lower == clean || lower.contains(&clean as &str)) && !is_unusable_or_virtual_device(d)
     })
 }
 
@@ -296,37 +314,97 @@ impl AudioStreamEngine {
 
     pub fn list_input_devices() -> Vec<AudioDeviceInfo> {
         let host = cpal::default_host();
-        let default_name = host.default_input_device().map(|d| get_device_name(&d));
+        let def_dev = host.default_input_device();
+        let def_name = def_dev.as_ref().map(|d| get_device_name(d));
+        let def_driver = def_dev
+            .as_ref()
+            .and_then(|d| d.description().ok())
+            .and_then(|desc| desc.driver().map(|s| s.to_string()));
+
         let mut list = Vec::new();
         if let Ok(devices) = host.input_devices() {
-            for (idx, dev) in devices.enumerate() {
+            for dev in devices {
+                if is_unusable_or_virtual_device(&dev) {
+                    continue;
+                }
                 let name = get_device_name(&dev);
-                let is_default = default_name.as_deref() == Some(&name);
+                let dev_driver = dev
+                    .description()
+                    .ok()
+                    .and_then(|desc| desc.driver().map(|s| s.to_string()));
+
+                let is_default = def_name.as_deref() == Some(&name)
+                    || (def_driver.is_some() && def_driver == dev_driver);
+
+                let index = list.len();
                 list.push(AudioDeviceInfo {
-                    index: idx,
+                    index,
                     name,
                     is_default,
                 });
             }
         }
+
+        // If no device was explicitly marked default (e.g. driver name variance),
+        // prioritize pipewire / pulse / default or the first device.
+        if !list.is_empty() && !list.iter().any(|d| d.is_default) {
+            if let Some(pos) = list.iter().position(|d| {
+                let n = d.name.to_lowercase();
+                n.contains("pipewire") || n.contains("pulse") || n.contains("default")
+            }) {
+                list[pos].is_default = true;
+            } else {
+                list[0].is_default = true;
+            }
+        }
+
         list
     }
 
     pub fn list_output_devices() -> Vec<AudioDeviceInfo> {
         let host = cpal::default_host();
-        let default_name = host.default_output_device().map(|d| get_device_name(&d));
+        let def_dev = host.default_output_device();
+        let def_name = def_dev.as_ref().map(|d| get_device_name(d));
+        let def_driver = def_dev
+            .as_ref()
+            .and_then(|d| d.description().ok())
+            .and_then(|desc| desc.driver().map(|s| s.to_string()));
+
         let mut list = Vec::new();
         if let Ok(devices) = host.output_devices() {
-            for (idx, dev) in devices.enumerate() {
+            for dev in devices {
+                if is_unusable_or_virtual_device(&dev) {
+                    continue;
+                }
                 let name = get_device_name(&dev);
-                let is_default = default_name.as_deref() == Some(&name);
+                let dev_driver = dev
+                    .description()
+                    .ok()
+                    .and_then(|desc| desc.driver().map(|s| s.to_string()));
+
+                let is_default = def_name.as_deref() == Some(&name)
+                    || (def_driver.is_some() && def_driver == dev_driver);
+
+                let index = list.len();
                 list.push(AudioDeviceInfo {
-                    index: idx,
+                    index,
                     name,
                     is_default,
                 });
             }
         }
+
+        if !list.is_empty() && !list.iter().any(|d| d.is_default) {
+            if let Some(pos) = list.iter().position(|d| {
+                let n = d.name.to_lowercase();
+                n.contains("pipewire") || n.contains("pulse") || n.contains("default")
+            }) {
+                list[pos].is_default = true;
+            } else {
+                list[0].is_default = true;
+            }
+        }
+
         list
     }
 
@@ -339,29 +417,33 @@ impl AudioStreamEngine {
     }
 
     /// Resolves the physical microphone, never returning one of Audiover's
-    /// own virtual devices (feedback-loop protection).
+    /// own virtual devices or black-hole null devices.
     /// Mirrors Python `resolve_input_device`.
     fn resolve_input_device_named(host: &cpal::Host, saved: Option<&str>) -> Option<Device> {
         let devices = Self::collect_input_devices(host);
         // 1. Saved device name lookup (substring, case-insensitive).
         if let Some(name) = saved {
-            if let Some(dev) = match_device_by_name(devices.clone(), name) {
-                info!("Restored saved input device: {}", get_device_name(&dev));
-                return Some(dev);
+            if !is_virtual_device_name(name) {
+                if let Some(dev) = match_device_by_name(devices.clone(), name) {
+                    info!("Restored saved input device: {}", get_device_name(&dev));
+                    return Some(dev);
+                }
+            } else {
+                warn!("Ignoring unusable saved input device: {}", name);
             }
         }
-        // 2. System default input device (unless virtual).
+        // 2. System default input device (unless unusable/virtual).
         if let Some(def) = host.default_input_device() {
             let name = get_device_name(&def);
-            if !is_virtual_device_name(&name) {
+            if !is_unusable_or_virtual_device(&def) {
                 info!("Using system default input device: {}", name);
                 return Some(def);
             }
         }
         // 3. First non-virtual input device.
         for dev in devices {
-            let name = get_device_name(&dev);
-            if !is_virtual_device_name(&name) {
+            if !is_unusable_or_virtual_device(&dev) {
+                let name = get_device_name(&dev);
                 info!("Fallback selected input device: {}", name);
                 return Some(dev);
             }
@@ -379,23 +461,27 @@ impl AudioStreamEngine {
         let devices = Self::collect_output_devices(host);
         // 1. Saved device name lookup.
         if let Some(name) = saved {
-            if let Some(dev) = match_device_by_name(devices.clone(), name) {
-                info!("Restored saved monitor device: {}", get_device_name(&dev));
-                return Some(dev);
+            if !is_virtual_device_name(name) {
+                if let Some(dev) = match_device_by_name(devices.clone(), name) {
+                    info!("Restored saved monitor device: {}", get_device_name(&dev));
+                    return Some(dev);
+                }
+            } else {
+                warn!("Ignoring unusable saved monitor device: {}", name);
             }
         }
-        // 2. System default output device (unless virtual).
+        // 2. System default output device (unless unusable/virtual).
         if let Some(def) = host.default_output_device() {
             let name = get_device_name(&def);
-            if !is_virtual_device_name(&name) {
+            if !is_unusable_or_virtual_device(&def) {
                 info!("Using system default output device: {}", name);
                 return Some(def);
             }
         }
         // 3. First non-virtual output device.
         for dev in devices {
-            let name = get_device_name(&dev);
-            if !is_virtual_device_name(&name) {
+            if !is_unusable_or_virtual_device(&dev) {
+                let name = get_device_name(&dev);
                 info!("Fallback selected monitor device: {}", name);
                 return Some(dev);
             }
@@ -594,10 +680,11 @@ impl AudioStreamEngine {
         );
         let host = cpal::default_host();
 
-        // 1. Resolve physical input device (never a virtual device).
+        // 1. Resolve physical input device (never an unusable or virtual device).
         let saved_in = self.selected_input_name.lock().clone();
         let input_dev = Self::resolve_input_device_named(&host, saved_in.as_deref())
             .ok_or_else(|| "No input device available".to_string())?;
+        *self.selected_input_name.lock() = Some(get_device_name(&input_dev));
 
         // 2. Resolve virtual sink (with retry); missing sink only disables
         //    the virtual-mic path instead of killing the whole engine.
@@ -609,6 +696,11 @@ impl AudioStreamEngine {
         // 3. Resolve monitor device (None = explicitly disabled).
         let saved_mon = self.selected_monitor_name.lock().clone();
         let monitor_dev = Self::resolve_monitor_device_named(&host, saved_mon.as_deref());
+        if let Some(ref m_dev) = monitor_dev {
+            if saved_mon.as_deref() != Some(MONITOR_DISABLED_SENTINEL) {
+                *self.selected_monitor_name.lock() = Some(get_device_name(m_dev));
+            }
+        }
 
         // Rings hold stereo frames; pre-buffered with silence like Python.
         let ring_capacity = block_size * RING_BLOCKS;
@@ -1008,12 +1100,20 @@ impl AudioStreamEngine {
 
     /// Restores a persisted input device by name (Python parity).
     pub fn set_input_device_name(&self, name: &str) {
-        *self.selected_input_name.lock() = Some(name.to_string());
+        if !is_virtual_device_name(name) {
+            *self.selected_input_name.lock() = Some(name.to_string());
+        } else {
+            *self.selected_input_name.lock() = None;
+        }
     }
 
     /// Restores a persisted monitor device by name (`"none"` disables).
     pub fn set_monitor_device_name(&self, name: &str) {
-        *self.selected_monitor_name.lock() = Some(name.to_string());
+        if name == MONITOR_DISABLED_SENTINEL || !is_virtual_device_name(name) {
+            *self.selected_monitor_name.lock() = Some(name.to_string());
+        } else {
+            *self.selected_monitor_name.lock() = None;
+        }
     }
 
     pub fn selected_input_name(&self) -> Option<String> {
@@ -1036,19 +1136,21 @@ impl AudioStreamEngine {
                 sel_in.as_deref().map(|s| {
                     let a = d.name.to_lowercase();
                     let b = s.trim().to_lowercase();
-                    a == b || a.contains(b.as_str())
+                    (a == b || a.contains(b.as_str())) && !is_virtual_device_name(&d.name)
                 }).unwrap_or(false)
-                    || (sel_in.is_none()
-                        && d.is_default
-                        && !is_virtual_device_name(&d.name))
             })
             .map(|d| d.index)
             .or_else(|| {
-                // Fall back to the default non-virtual input like the engine does.
                 Self::resolve_input_device_named(&host, sel_in.as_deref()).and_then(|dev| {
                     let name = get_device_name(&dev);
                     inputs.iter().find(|d| d.name == name).map(|d| d.index)
                 })
+            })
+            .or_else(|| {
+                inputs.iter().find(|d| d.is_default).map(|d| d.index)
+            })
+            .or_else(|| {
+                inputs.first().map(|d| d.index)
             });
 
         let sel_mon = self.selected_monitor_name.lock().clone();
@@ -1061,7 +1163,7 @@ impl AudioStreamEngine {
                     sel_mon.as_deref().map(|s| {
                         let a = d.name.to_lowercase();
                         let b = s.trim().to_lowercase();
-                        a == b || a.contains(b.as_str())
+                        (a == b || a.contains(b.as_str())) && !is_virtual_device_name(&d.name)
                     }).unwrap_or(false)
                 })
                 .map(|d| d.index)
@@ -1072,6 +1174,12 @@ impl AudioStreamEngine {
                             outputs.iter().find(|d| d.name == name).map(|d| d.index)
                         },
                     )
+                })
+                .or_else(|| {
+                    outputs.iter().find(|d| d.is_default).map(|d| d.index)
+                })
+                .or_else(|| {
+                    outputs.first().map(|d| d.index)
                 })
         };
 
@@ -1203,7 +1311,6 @@ mod tests {
 
     #[test]
     fn test_virtual_sink_detection() {
-        // pactl info / sink check runs cleanly without panicking
         let _ = AudioStreamEngine::is_virtual_sink_available();
     }
 
@@ -1213,8 +1320,54 @@ mod tests {
         assert!(is_virtual_device_name("Audiover_Mic"));
         assert!(is_virtual_device_name("Audiover_Virtual_Sink"));
         assert!(is_virtual_device_name("module-null_sink"));
+        assert!(is_virtual_device_name("Discard all samples (playback) or generate zero samples (capture)"));
+        assert!(is_virtual_device_name("null"));
+        assert!(is_virtual_device_name("dummy output"));
         assert!(!is_virtual_device_name("Realtek ALC256"));
         assert!(!is_virtual_device_name("HDA Intel PCH"));
+        assert!(!is_virtual_device_name("PipeWire Sound Server"));
+        assert!(!is_virtual_device_name("Default ALSA Output (currently PipeWire Media Server)"));
+        assert!(!is_virtual_device_name("USB Audio Device"));
+    }
+
+    #[test]
+    fn test_device_listing_filters_unusable() {
+        let inputs = AudioStreamEngine::list_input_devices();
+        for dev in &inputs {
+            assert!(
+                !is_virtual_device_name(&dev.name),
+                "Device {} should have been filtered out",
+                dev.name
+            );
+        }
+        if !inputs.is_empty() {
+            assert!(
+                inputs.iter().any(|d| d.is_default),
+                "At least one input device should be marked default"
+            );
+            // Verify indices are contiguous 0..N
+            for (i, dev) in inputs.iter().enumerate() {
+                assert_eq!(dev.index, i);
+            }
+        }
+
+        let outputs = AudioStreamEngine::list_output_devices();
+        for dev in &outputs {
+            assert!(
+                !is_virtual_device_name(&dev.name),
+                "Device {} should have been filtered out",
+                dev.name
+            );
+        }
+        if !outputs.is_empty() {
+            assert!(
+                outputs.iter().any(|d| d.is_default),
+                "At least one output device should be marked default"
+            );
+            for (i, dev) in outputs.iter().enumerate() {
+                assert_eq!(dev.index, i);
+            }
+        }
     }
 
     #[test]
