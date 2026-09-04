@@ -58,7 +58,7 @@ echo "    Cargo: $(cargo --version)"
 echo "[+] Checking Node.js & npm..."
 if ! command -v node &>/dev/null || ! command -v npm &>/dev/null; then
     echo "[-] Node.js / npm is not installed."
-    echo "    Please install Node.js 18+ (e.g. from your package manager or nvm)."
+    echo "    Please install Node.js 22+ (LTS) (e.g. from your package manager or nvm)."
     exit 1
 fi
 echo "    Node: $(node --version)"

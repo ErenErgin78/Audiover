@@ -48,6 +48,17 @@ git clone https://github.com/ErenErgin78/Audiover.git
 cd Audiover
 make setup-deps
 make dev
+
+# Paket derleme seçenekleri:
+make build          # Tüm paketleri derler (rpm, deb, appimage)
+make build-rpm      # RPM paketi üretir
+make build-deb      # DEB paketi üretir
+make build-appimage # AppImage üretir
+
+# Derleyip doğrudan sisteme kurmak / güncellemek için:
+make install-rpm      # Fedora / RHEL (dnf)
+make install-deb      # Ubuntu / Debian (apt)
+make install-appimage # Tüm dağıtımlar (bağımsız masaüstü entegrasyonu)
 ```
 
 ### Ses Yapılandırması

@@ -2,7 +2,7 @@
 # Audiover - Voice & Soundboard Engine Makefile
 # ==============================================================================
 
-.PHONY: help setup setup-deps dev build build-rpm build-deb build-appimage clean test lint
+.PHONY: help setup setup-deps dev build build-rpm build-deb build-appimage install-rpm install-deb install-appimage clean test lint
 
 # Default target
 .DEFAULT_GOAL := help
@@ -28,11 +28,47 @@ build: ## Build release packages for all configured targets (rpm, deb, appimage)
 build-rpm: ## Build RPM package only
 	@bash scripts/build_packages.sh rpm
 
+install-rpm: build-rpm ## Build RPM and reinstall on local system (sudo dnf)
+	@echo "[+] Reinstalling Audiover RPM package..."
+	@sudo dnf reinstall -y ./dist/Audiover-*.rpm 2>/dev/null || sudo dnf install -y ./dist/Audiover-*.rpm
+	@echo "========================================================"
+	@echo "  Audiover RPM has been successfully reinstalled!"
+	@echo "========================================================"
+
 build-deb: ## Build DEB package only
 	@bash scripts/build_packages.sh deb
 
+install-deb: build-deb ## Build DEB and reinstall on local system (sudo apt)
+	@echo "[+] Installing Audiover DEB package..."
+	@sudo apt-get update -qq 2>/dev/null || true
+	@sudo apt-get install --reinstall -y ./dist/Audiover_*.deb 2>/dev/null || sudo apt-get install -y ./dist/Audiover_*.deb
+	@echo "========================================================"
+	@echo "  Audiover DEB has been successfully installed!"
+	@echo "========================================================"
+
 build-appimage: ## Build AppImage package only
 	@bash scripts/build_packages.sh appimage
+
+install-appimage: build-appimage ## Build AppImage and integrate to user system (~/.local/bin)
+	@echo "[+] Installing Audiover AppImage to ~/.local/bin and desktop menu..."
+	@mkdir -p ~/.local/bin ~/.local/share/applications ~/.local/share/icons/hicolor/scalable/apps ~/.local/share/icons/hicolor/256x256/apps
+	@APPIMAGE_PATH=$$(ls -t dist/Audiover_*.AppImage 2>/dev/null | head -n 1); \
+	if [ -n "$$APPIMAGE_PATH" ]; then \
+		cp "$$APPIMAGE_PATH" ~/.local/bin/audiover && chmod +x ~/.local/bin/audiover; \
+	fi
+	@if [ -f packaging/desktop/audiover.desktop ]; then \
+		cp packaging/desktop/audiover.desktop ~/.local/share/applications/audiover.desktop; \
+	fi
+	@if [ -f assets/icons/audiover.svg ]; then \
+		cp assets/icons/audiover.svg ~/.local/share/icons/hicolor/scalable/apps/audiover.svg; \
+	fi
+	@if [ -f assets/icons/audiover.png ]; then \
+		cp assets/icons/audiover.png ~/.local/share/icons/hicolor/256x256/apps/audiover.png; \
+	fi
+	@update-desktop-database ~/.local/share/applications 2>/dev/null || true
+	@echo "========================================================"
+	@echo "  Audiover AppImage installed successfully to ~/.local/bin/audiover"
+	@echo "========================================================"
 
 test: ## Run Rust tests and TypeScript type checking
 	@echo "[+] Running TypeScript check..."
