@@ -1,136 +1,56 @@
-# Audiover
+<div align="center">
 
-Linux (PipeWire / PulseAudio) için gerçek zamanlı ses dönüştürücü (voice changer) ve ses tahtası (soundboard) uygulaması.
+<img src="assets/icons/audiover.png" alt="Audiover Logo" width="128" />
 
----
+# AUDIOVER
 
-## Özellikler
+**Linux İçin Gerçek Zamanlı Ses Değiştirici Ve Soundboard Uygulaması**
 
-### Ses Dönüştürücü (DSP)
-- **Pitch Shifter:** Granüler sentez ile perde kaydırma (-12 / +12 semiton).
-- **Robot / Ring Modulator:** Taşıyıcı frekansı ayarlanabilir ring modülasyonu (50 Hz - 600 Hz).
-- **Telsiz Filtresi:** 2. derece Butterworth bandpass filtre (300 Hz – 3400 Hz) ve harmonik distorsiyon.
-- **Distortion:** Tanjant hiperbolik (`tanh`) tabanlı analog doygunluk.
-- **Reverb:** 4 paralel tarak ve 2 tüm-geçiren filtreli Schroeder yankı efekti.
-- **Chorus:** LFO modülasyonlu uzamsal gecikme efekti.
-- **Noise Gate:** Yumuşak geçişli (soft-knee) gürültü kapısı.
-- **Ön Ayarlar ve DSP Ayarları:** Hazır ve özel efekt profilleri oluşturma ve düzenleme.
-- **Bypass:** Efekt zincirini devre dışı bırakıp ham mikrofon sesine dönme.
+<br/>
 
-### Soundboard
-- **Format Desteği:** `.mp3`, `.wav`, `.ogg`, `.flac`, `.m4a`, `.mp4` (yalnızca ses akışı).
-- **Bellek Üzerinden Oynatma:** Sesler RAM'e 48 kHz 32-bit float stereo olarak yüklenir ve gecikmesiz tetiklenir.
-- **Kanal Kontrolleri:** Bağımsız ses seviyesi, döngü (loop) ve durdurma kontrolleri.
-- **Toplu Durdurma:** Çalan tüm sesleri tek tuşla durdurma.
+[![][github-release-shield]][github-release-link]
+[![][github-release-date-shield]][github-release-link]
+[![][github-downloads-shield]][github-downloads-link]
+[![][github-downloads-latest-shield]][github-downloads-link]
 
-### Sanal Ses Yönlendirme (PipeWire / PulseAudio)
-- **Sanal Aygıt Yönetimi:** `Audiover_Sink` ve `Audiover_Mic` (`module-remap-source`) aygıtları ile otomatik miks yönetimi.
-- **Uygulama Entegrasyonu:** Discord, OBS Studio, Steam ve oyunlara dönüştürülmüş mikrofon ve ses tahtası çıkışını aktarma.
-- **Geri Bildirim Koruması:** Fiziksel ve sanal aygıtlar arasında döngü (loopback) oluşmasını engelleme.
-- **Otomatik Temizleme:** Uygulama kapandığında oluşturulan sanal modülleri sistemden kaldırma.
-
-### Canlı Dinleme ve Giriş Yönetimi
-- **Canlı Dinleme (Hear Myself):** Dönüştürülen ses ve soundboard çıkışını kulaklıktan dinleme.
-- **Global Kısayollar:** Wayland ve X11 ortamlarında `/dev/input` üzerinden arka planda kısayol desteği.
+</div>
 
 ---
 
-## Mimari
+## Kurulum
 
-```
-                  ┌─────────────────────────────┐
-                  │       Fiziksel Mikrofon     │
-                  └──────────────┬──────────────┘
-                                 │ (48kHz Float32)
-                                 ▼
-                  ┌─────────────────────────────┐
-                  │    DSP Efekt Zinciri        │
-                  │  - Noise Gate               │
-                  │  - Pitch Shifter            │
-                  │  - Ring Modulator           │
-                  │  - Bandpass Filter          │
-                  │  - Distortion / Saturator   │
-                  │  - Schroeder Reverb / Chorus│
-                  └──────────────┬──────────────┘
-                                 │
-┌───────────────────────┐        │ (İşlenmiş Ses)
-│   Soundboard Motoru   │        │
-│   (RAM 48kHz Stereo)  ├────────┼────────────────────────────┐
-└───────────┬───────────┘        │                            │
-            │ (SFX)              ▼                            ▼
-            │             ┌──────────────┐             ┌──────────────┐
-            └────────────►│ Master Mikser│             │ Monitör      │
-                          │  + Limiter   │             │ (Kulaklık)   │
-                          └──────┬───────┘             └──────────────┘
-                                 │
-                                 ▼
-                  ┌─────────────────────────────┐
-                  │  Audiover_Sink (Null Sink)  │
-                  └──────────────┬──────────────┘
-                                 │
-                                 ▼
-                  ┌─────────────────────────────┐
-                  │ Audiover_Virtual_Microphone │
-                  │    (module-remap-source)    │
-                  └──────────────┬──────────────┘
-                                 │
-                    ┌────────────┴────────────┐
-                    ▼                         ▼
-             [Discord / OBS]          [Oyunlar / Diğer]
-```
+### Hazır Paketler ile Kurulum
 
-### Teknik Parametreler
-- **Örnekleme Hızı:** 48.000 Hz
-- **Blok Boyutu:** 256 frame (~5.33 ms gecikme)
-- **Ses Formatı:** 32-bit float (`float32`, [-1.0, 1.0])
-- **Kırpılma Koruması:** Master çıkışta yumuşak sınırlayıcı (soft limiter)
-- **Girdi Takibi:** Linux `/dev/input/event*` standardı ile global kısayol takibi
+[Releases][github-release-link] sayfasından dağıtımınıza uygun sürümü indirin:
 
----
+- **AppImage:**
+  ```bash
+  chmod +x Audiover_*.AppImage
+  ./Audiover_*.AppImage
+  ```
 
-## Kurulum ve Çalıştırma
+- **Debian / Ubuntu (.deb):**
+  ```bash
+  sudo dpkg -i audiover_*.deb
+  ```
 
-### Gereksinimler
-- Linux (Fedora, Arch, Ubuntu vb.)
-- PipeWire (`pipewire-pulse`) veya PulseAudio
-- `pulseaudio-utils` (`pactl`), `ffmpeg`
-- Rust & Cargo (1.75+)
-- Node.js (18+) ve npm
+- **Fedora / RHEL (.rpm):**
+  ```bash
+  sudo dnf install ./audiover-*.rpm
+  ```
 
-### Geliştirme Ortamı Kurulumu
+### Hızlı Başlangıç (Kaynak Koddan)
+
+Projeyi doğrudan klonlayıp çalıştırabilirsiniz:
+
 ```bash
-make setup
-# veya sistem paketleriyle birlikte:
+git clone https://github.com/ErenErgin78/Audiover.git
+cd Audiover
 make setup-deps
-```
-
-### Global Kısayol İzni (Opsiyonel)
-Wayland üzerinde global kısayolların `/dev/input` üzerinden dinlenebilmesi için kullanıcının `input` grubunda olması gerekir:
-```bash
-sudo usermod -aG input $USER
-```
-*(Komutun geçerli olması için oturumu kapatıp yeniden açın).*
-
-### Başlatma (Geliştirici Modu)
-```bash
 make dev
 ```
 
-### Paket Oluşturma (RPM, DEB, AppImage)
-Tauri CLI tabanlı paketleyicimiz ile paketler doğrudan derlenip `dist/` klasörüne yerleştirilir:
-```bash
-# Tüm paketleri derler (rpm, deb, appimage):
-make build
-
-# Veya belirli bir format için:
-make build-rpm
-make build-deb
-make build-appimage
-```
-
----
-
-## Ses Yapılandırması
+### Ses Yapılandırması
 
 1. Audiover uygulamasını başlatın.
 2. Hedef uygulamada (Discord, OBS Studio vb.) mikrofon / giriş aygıtı olarak **Audiover_Virtual_Microphone** (veya `Audiover_Mic`) seçin.
@@ -138,22 +58,26 @@ make build-appimage
 
 ---
 
-## Varsayılan Kısayollar
+## Özellikler
 
-| Tuş | Eylem |
-|---|---|
-| `F8` | Canlı dinleme (Hear Myself) aç / kapat |
-| `F9` | Mikrofonu sustur (Mute) / aç |
-| `F10` | DSP efektlerini devre dışı bırak (Bypass) / etkinleştir |
-| `F11` | Çalan tüm soundboard seslerini durdur |
-| `1` | Airhorn |
-| `2` | Level Up |
-| `3` | Cyber Alert |
-
-*Kısayollar uygulama arayüzünden özelleştirilebilir.*
+- **Rust ve Tauri Altyapısı:** Sistem kaynaklarını minimum düzeyde tüketen hafif ve yüksek performanslı mimari.
+- **Canlı Ses Değiştirici:** Ses perdesi, robot sesi, telsiz filtresi, yankı ve doygunluk gibi kişiselleştirilebilir ayarlar.
+- **Dahili Soundboard:** MP3, WAV, OGG, FLAC ve M4A formatlarındaki ses efektleri eklenip oynatılabilir.
+- **Canlı Dinleme:** Mikrofonunuzdan geçen işlenmiş sesi ve çalan efektleri kulaklığınızdan anlık olarak duyma özelliği.
+- **Sanal Mikrofon:** Discord, OBS, oyunlar ve tüm iletişim yazılımlarıyla tam uyumluluk.
+- **Global Kısayollar:** Uygulama simge durumundayken veya oyundayken dahi ses efektlerini ve ses profilini yönetin.
 
 ---
 
 ## Lisans
 
-MIT
+Bu proje [MIT](LICENSE) lisansı altında sunulmaktadır.
+
+<!-- Bağlantı ve Rozet Tanımları -->
+[github-release-shield]: https://img.shields.io/github/v/release/ErenErgin78/Audiover?style=flat-square
+[github-release-date-shield]: https://img.shields.io/github/release-date/ErenErgin78/Audiover?style=flat-square
+[github-downloads-shield]: https://img.shields.io/github/downloads/ErenErgin78/Audiover/total?style=flat-square
+[github-downloads-latest-shield]: https://img.shields.io/github/downloads/ErenErgin78/Audiover/latest/total?style=flat-square
+[github-release-link]: https://github.com/ErenErgin78/Audiover/releases
+[github-downloads-link]: https://github.com/ErenErgin78/Audiover/releases
+
