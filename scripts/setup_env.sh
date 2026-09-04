@@ -3,7 +3,7 @@
 # Sets up Rust toolchain, Node.js dependencies, and system libraries for Audiover
 set -e
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 cd "$PROJECT_ROOT"
 
 echo "========================================================"
@@ -14,7 +14,7 @@ echo "========================================================"
 detect_and_install_deps() {
     if command -v dnf &>/dev/null; then
         echo "[+] Fedora/RHEL detected (dnf)"
-        echo "[*] Recommended system dependencies: webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ffmpeg"
+        echo "[*] Recommended system dependencies: webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ffmpeg ImageMagick rpm-build"
         read -p "[?] Would you like to attempt installing system dependencies with sudo dnf? (y/N) " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -22,7 +22,7 @@ detect_and_install_deps() {
         fi
     elif command -v apt-get &>/dev/null; then
         echo "[+] Debian/Ubuntu detected (apt)"
-        echo "[*] Recommended system dependencies: libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils ffmpeg"
+        echo "[*] Recommended system dependencies: libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils ffmpeg imagemagick"
         read -p "[?] Would you like to attempt installing system dependencies with sudo apt? (y/N) " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -30,7 +30,7 @@ detect_and_install_deps() {
         fi
     elif command -v pacman &>/dev/null; then
         echo "[+] Arch Linux detected (pacman)"
-        echo "[*] Recommended system dependencies: webkit2gtk-4.1 openssl alsa-lib libpulse ffmpeg"
+        echo "[*] Recommended system dependencies: webkit2gtk-4.1 openssl alsa-lib libpulse ffmpeg imagemagick"
         read -p "[?] Would you like to attempt installing system dependencies with sudo pacman? (y/N) " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -39,7 +39,7 @@ detect_and_install_deps() {
     fi
 }
 
-if [[ "$1" == "--install-deps" ]]; then
+if [[ "${1:-}" == "--install-deps" ]]; then
     detect_and_install_deps
 fi
 
@@ -87,5 +87,5 @@ cd "$PROJECT_ROOT"
 
 echo "========================================================"
 echo "  Setup Complete! Ready to launch Audiover."
-echo "  Run './run.sh' to start development server."
+echo "  Run 'make dev' to start development server."
 echo "========================================================"

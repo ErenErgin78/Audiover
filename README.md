@@ -99,8 +99,9 @@ Linux (PipeWire / PulseAudio) için gerçek zamanlı ses dönüştürücü (voic
 
 ### Geliştirme Ortamı Kurulumu
 ```bash
-chmod +x setup_env.sh run.sh
-./setup_env.sh
+make setup
+# veya sistem paketleriyle birlikte:
+make setup-deps
 ```
 
 ### Global Kısayol İzni (Opsiyonel)
@@ -112,13 +113,19 @@ sudo usermod -aG input $USER
 
 ### Başlatma (Geliştirici Modu)
 ```bash
-./run.sh
+make dev
 ```
 
-### RPM Paketi Oluşturma
+### Paket Oluşturma (RPM, DEB, AppImage)
+Tauri CLI tabanlı paketleyicimiz ile paketler doğrudan derlenip `dist/` klasörüne yerleştirilir:
 ```bash
-chmod +x build_rpm.sh
-./build_rpm.sh
+# Tüm paketleri derler (rpm, deb, appimage):
+make build
+
+# Veya belirli bir format için:
+make build-rpm
+make build-deb
+make build-appimage
 ```
 
 ---

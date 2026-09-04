@@ -2,18 +2,18 @@
 # Audiover Launcher Script (Rust / Tauri)
 set -e
 
-DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
 cd "$DIR"
 
 # 1. Ensure UI node_modules are installed
 if [ ! -d "ui/node_modules" ]; then
     echo "[!] UI dependencies not found. Running setup_env.sh first..."
-    bash setup_env.sh
+    bash "$DIR/scripts/setup_env.sh"
 fi
 
 # 2. Check for Rust / Cargo
 if ! command -v cargo &>/dev/null; then
-    echo "[-] Error: 'cargo' not found in PATH. Please install Rust or run ./setup_env.sh"
+    echo "[-] Error: 'cargo' not found in PATH. Please install Rust or run ./scripts/setup_env.sh"
     exit 1
 fi
 
