@@ -72,11 +72,24 @@ cd "$PROJECT_ROOT"
 
 # 5. Check Global Hotkey Permissions (/dev/input)
 echo "[+] Checking input group membership for global hotkeys..."
-if ! groups | grep -q '\binput\b'; then
-    echo "[!] Notice: For global hotkeys (/dev/input) to work without root,"
-    echo "    your user should be added to the 'input' group:"
-    echo "    sudo usermod -aG input $USER"
-    echo "    (Log out and log back in for changes to take effect)."
+if ! id -nG "$USER" 2>/dev/null | grep -qw "input"; then
+    echo "[!] User '$USER' is not in the 'input' group (required for global hotkeys)."
+    if [[ "${1:-}" == "--install-deps" ]]; then
+        echo "[+] Adding '$USER' to 'input' group..."
+        sudo usermod -aG input "$USER"
+        echo "[*] Added to 'input' group. (Note: Log out and log back in for changes to take effect)."
+    else
+        read -p "[?] Would you like to add '$USER' to the 'input' group with sudo? (y/N) " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            sudo usermod -aG input "$USER"
+            echo "[*] Added to 'input' group. (Note: Log out and log back in for changes to take effect)."
+        else
+            echo "[!] Skipped. You can add manually later: sudo usermod -aG input $USER"
+        fi
+    fi
+else
+    echo "[✓] User '$USER' is already in 'input' group."
 fi
 
 # 6. Verify Rust Build
