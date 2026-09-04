@@ -19,7 +19,58 @@ echo "========================================================"
 echo "          Audiover Package Builder (Tauri CLI)"
 echo "========================================================"
 
-# 1. Dependency checks
+# 1. System dependency checks & auto-installation
+ensure_system_deps() {
+    local missing=()
+    if command -v dnf &>/dev/null; then
+        local deps=(webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ImageMagick rpm-build)
+        for pkg in "${deps[@]}"; do
+            if ! rpm -q "$pkg" &>/dev/null; then
+                missing+=("$pkg")
+            fi
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+            echo "[!] Missing system dependencies detected: ${missing[*]}"
+            echo "[+] Installing missing packages with sudo dnf..."
+            sudo dnf install -y "${missing[@]}"
+        else
+            echo "[✓] System build dependencies are already satisfied."
+        fi
+    elif command -v apt-get &>/dev/null; then
+        local deps=(libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils imagemagick)
+        for pkg in "${deps[@]}"; do
+            if ! dpkg -s "$pkg" 2>/dev/null | grep -q "Status: install ok installed"; then
+                missing+=("$pkg")
+            fi
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+            echo "[!] Missing system dependencies detected: ${missing[*]}"
+            echo "[+] Installing missing packages with sudo apt..."
+            sudo apt-get update -qq
+            sudo apt-get install -y "${missing[@]}"
+        else
+            echo "[✓] System build dependencies are already satisfied."
+        fi
+    elif command -v pacman &>/dev/null; then
+        local deps=(webkit2gtk-4.1 openssl alsa-lib libpulse imagemagick)
+        for pkg in "${deps[@]}"; do
+            if ! pacman -Q "$pkg" &>/dev/null; then
+                missing+=("$pkg")
+            fi
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+            echo "[!] Missing system dependencies detected: ${missing[*]}"
+            echo "[+] Installing missing packages with sudo pacman..."
+            sudo pacman -S --needed --noconfirm "${missing[@]}"
+        else
+            echo "[✓] System build dependencies are already satisfied."
+        fi
+    fi
+}
+
+ensure_system_deps
+
+# 2. Toolchain checks
 for cmd in node npm cargo; do
     if ! command -v "$cmd" &>/dev/null; then
         echo "[-] Error: Required tool '$cmd' is not installed." >&2

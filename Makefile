@@ -28,11 +28,13 @@ build: ## Build release packages for all configured targets (rpm, deb, appimage)
 build-rpm: ## Build RPM package only
 	@bash scripts/build_packages.sh rpm
 
-install-rpm: build-rpm ## Build RPM and reinstall on local system (sudo dnf)
-	@echo "[+] Reinstalling Audiover RPM package..."
-	@sudo dnf reinstall -y ./dist/Audiover-*.rpm 2>/dev/null || sudo dnf install -y ./dist/Audiover-*.rpm
+install-rpm: build-rpm ## Build RPM and install/upgrade on local system (sudo dnf)
+	@echo "[+] Installing Audiover RPM package..."
+	@rm -f ~/.local/share/applications/audiover.desktop ~/.local/share/applications/Audiover.desktop 2>/dev/null || true
+	@sudo dnf install -y --allowerasing ./dist/Audiover-*.rpm
+	@update-desktop-database ~/.local/share/applications 2>/dev/null || true
 	@echo "========================================================"
-	@echo "  Audiover RPM has been successfully reinstalled!"
+	@echo "  Audiover RPM has been successfully installed!"
 	@echo "========================================================"
 
 build-deb: ## Build DEB package only
@@ -40,8 +42,10 @@ build-deb: ## Build DEB package only
 
 install-deb: build-deb ## Build DEB and reinstall on local system (sudo apt)
 	@echo "[+] Installing Audiover DEB package..."
+	@rm -f ~/.local/share/applications/audiover.desktop ~/.local/share/applications/Audiover.desktop 2>/dev/null || true
 	@sudo apt-get update -qq 2>/dev/null || true
 	@sudo apt-get install --reinstall -y ./dist/Audiover_*.deb 2>/dev/null || sudo apt-get install -y ./dist/Audiover_*.deb
+	@update-desktop-database ~/.local/share/applications 2>/dev/null || true
 	@echo "========================================================"
 	@echo "  Audiover DEB has been successfully installed!"
 	@echo "========================================================"

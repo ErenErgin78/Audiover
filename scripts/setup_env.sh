@@ -12,36 +12,62 @@ echo "========================================================"
 
 # 1. Detect Package Manager and Distro
 detect_and_install_deps() {
+    local missing=()
     if command -v dnf &>/dev/null; then
-        echo "[+] Fedora/RHEL detected (dnf)"
-        echo "[*] Recommended system dependencies: webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ffmpeg ImageMagick rpm-build"
-        read -p "[?] Would you like to attempt installing system dependencies with sudo dnf? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            sudo dnf install -y webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ffmpeg ImageMagick rpm-build
+        local deps=(webkit2gtk4.1-devel openssl-devel alsa-lib-devel pulseaudio-utils ImageMagick rpm-build)
+        for pkg in "${deps[@]}"; do
+            if ! rpm -q "$pkg" &>/dev/null; then
+                missing+=("$pkg")
+            fi
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+            echo "[!] Missing system dependencies detected: ${missing[*]}"
+            read -p "[?] Would you like to install missing dependencies with sudo dnf? (y/N) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                sudo dnf install -y "${missing[@]}"
+            fi
+        else
+            echo "[✓] All system dependencies are already installed (dnf)."
         fi
     elif command -v apt-get &>/dev/null; then
-        echo "[+] Debian/Ubuntu detected (apt)"
-        echo "[*] Recommended system dependencies: libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils ffmpeg imagemagick"
-        read -p "[?] Would you like to attempt installing system dependencies with sudo apt? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils ffmpeg imagemagick
+        local deps=(libwebkit2gtk-4.1-dev libssl-dev libasound2-dev pulseaudio-utils imagemagick)
+        for pkg in "${deps[@]}"; do
+            if ! dpkg -s "$pkg" 2>/dev/null | grep -q "Status: install ok installed"; then
+                missing+=("$pkg")
+            fi
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+            echo "[!] Missing system dependencies detected: ${missing[*]}"
+            read -p "[?] Would you like to install missing dependencies with sudo apt? (y/N) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                sudo apt-get update && sudo apt-get install -y "${missing[@]}"
+            fi
+        else
+            echo "[✓] All system dependencies are already installed (apt)."
         fi
     elif command -v pacman &>/dev/null; then
-        echo "[+] Arch Linux detected (pacman)"
-        echo "[*] Recommended system dependencies: webkit2gtk-4.1 openssl alsa-lib libpulse ffmpeg imagemagick"
-        read -p "[?] Would you like to attempt installing system dependencies with sudo pacman? (y/N) " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            sudo pacman -S --needed webkit2gtk-4.1 openssl alsa-lib libpulse ffmpeg imagemagick
+        local deps=(webkit2gtk-4.1 openssl alsa-lib libpulse imagemagick)
+        for pkg in "${deps[@]}"; do
+            if ! pacman -Q "$pkg" &>/dev/null; then
+                missing+=("$pkg")
+            fi
+        done
+        if [ ${#missing[@]} -gt 0 ]; then
+            echo "[!] Missing system dependencies detected: ${missing[*]}"
+            read -p "[?] Would you like to install missing dependencies with sudo pacman? (y/N) " -n 1 -r
+            echo
+            if [[ $REPLY =~ ^[Yy]$ ]]; then
+                sudo pacman -S --needed "${missing[@]}"
+            fi
+        else
+            echo "[✓] All system dependencies are already installed (pacman)."
         fi
     fi
 }
 
-if [[ "${1:-}" == "--install-deps" ]]; then
-    detect_and_install_deps
-fi
+detect_and_install_deps
 
 # 2. Check Rust & Cargo
 echo "[+] Checking Rust toolchain..."
