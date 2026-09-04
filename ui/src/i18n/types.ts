@@ -5,7 +5,6 @@ export interface TranslationSchema {
     audio: string;
     hotkeys: string;
     settings: string;
-    logs: string;
   };
   header: {
     engineActive: string;
@@ -94,7 +93,6 @@ export interface TranslationSchema {
     tierPortalDesc: string;
     tierEvdevBadge: string;
     tierEvdevTitle: string;
-    tierEvdevDesc: string;
     tierInWindowBadge: string;
     tierInWindowTitle: string;
     tierInWindowDesc: string;
@@ -120,8 +118,6 @@ export interface TranslationSchema {
     version: string;
     framework: string;
     backend: string;
-    systemCard: string;
-    systemSummary: string;
   };
   app: {
     connecting: string;
@@ -134,33 +130,5 @@ export interface TranslationSchema {
     retryButton: string;
     launchHelpDev: string;
     launchHelpInstalled: string;
-  };
-  logs: {
-    title: string;
-    statusCard: string;
-    backendRow: string;
-    backendTauri: string;
-    backendPyWebView: string;
-    backendNone: string;
-    engineRow: string;
-    engineOn: string;
-    engineOff: string;
-    virtualSinkRow: string;
-    found: string;
-    missing: string;
-    pactlRow: string;
-    devicesRow: string;
-    hotkeyRow: string;
-    viewerCard: string;
-    levelAll: string;
-    pause: string;
-    resume: string;
-    clear: string;
-    copy: string;
-    copied: string;
-    empty: string;
-    diagCard: string;
-    diagCopy: string;
-    pywebviewUnsupported: string;
   };
 }

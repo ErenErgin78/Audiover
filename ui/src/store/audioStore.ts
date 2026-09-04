@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { AppState, Meters, PresetConfig, Sound } from "../hooks/useApi";
 
-export type PageId = "voice" | "soundboard" | "audio" | "hotkeys" | "settings" | "logs";
+export type PageId = "voice" | "soundboard" | "audio" | "hotkeys" | "settings";
 
 interface AudioStore {
   // ── App State ──

@@ -10,7 +10,6 @@ import SoundboardPage from "./pages/SoundboardPage";
 import AudioSettingsPage from "./pages/AudioSettingsPage";
 import HotkeysPage from "./pages/HotkeysPage";
 import SettingsPage from "./pages/SettingsPage";
-import LogsPage from "./pages/LogsPage";
 
 function ActivePage() {
   const page = useAudioStore((s) => s.activePage);
@@ -20,7 +19,6 @@ function ActivePage() {
     case "audio":      return <AudioSettingsPage />;
     case "hotkeys":    return <HotkeysPage />;
     case "settings":   return <SettingsPage />;
-    case "logs":       return <LogsPage />;
   }
 }
 

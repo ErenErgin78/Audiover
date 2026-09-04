@@ -13,7 +13,6 @@ export default function Sidebar() {
     { page: "audio",      icon: "🎚",   label: t.nav.audio      },
     { page: "hotkeys",    icon: "⌨",  label: t.nav.hotkeys    },
     { page: "settings",   icon: "⚙",   label: t.nav.settings   },
-    { page: "logs",       icon: "🧾",  label: t.nav.logs       },
   ];
 
   return (

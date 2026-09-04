@@ -21,9 +21,6 @@ export default function SettingsPage() {
         <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
           {t.settings.title}
         </h1>
-        <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 2 }}>
-          {t.settings.languageDescription}
-        </p>
       </div>
 
       {/* Language Selector */}
@@ -60,28 +57,6 @@ export default function SettingsPage() {
             );
           })}
         </div>
-      </Card>
-
-      {/* App Information */}
-      <Card title={t.settings.appInfoCard}>
-        <div className="flex flex-col gap-2" style={{ color: "var(--text-muted)", fontSize: 12 }}>
-          <div className="flex items-center gap-2">
-            <span style={{ color: "var(--text)", fontWeight: 600 }}>{t.settings.version}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span>{t.settings.framework}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <span>{t.settings.backend}</span>
-          </div>
-        </div>
-      </Card>
-
-      {/* System & Hardware Support */}
-      <Card title={t.settings.systemCard}>
-        <p style={{ color: "var(--text-muted)", fontSize: 12, lineHeight: 1.6 }}>
-          {t.settings.systemSummary}
-        </p>
       </Card>
     </div>
   );
