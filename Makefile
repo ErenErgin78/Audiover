@@ -2,7 +2,7 @@
 # Audiover - Voice & Soundboard Engine Makefile
 # ==============================================================================
 
-.PHONY: help setup setup-deps dev build build-rpm build-deb build-appimage install-rpm install-deb install-appimage clean test lint
+.PHONY: help setup setup-deps dev build build-rpm build-deb build-appimage install-rpm install-deb install-appimage clean test lint bump bump-patch bump-minor bump-major set-version
 
 # Default target
 .DEFAULT_GOAL := help
@@ -28,13 +28,23 @@ build: ## Build release packages for all configured targets (rpm, deb, appimage)
 build-rpm: ## Build RPM package only
 	@bash scripts/build_packages.sh rpm
 
-install-rpm: build-rpm ## Build RPM and install/upgrade on local system (sudo dnf)
-	@echo "[+] Installing Audiover RPM package..."
+install-rpm: build-rpm ## Build RPM and reinstall on local system (sudo dnf)
+	@echo "[+] Installing freshly built Audiover RPM package..."
 	@rm -f ~/.local/share/applications/audiover.desktop ~/.local/share/applications/Audiover.desktop 2>/dev/null || true
-	@sudo dnf install -y --allowerasing ./dist/Audiover-*.rpm
+	@if rpm -q audiover &>/dev/null; then \
+		echo "[*] Mevcut surum kaldiriliyor..."; \
+		sudo dnf remove -y audiover; \
+	fi
+	@RPM_FILE=$$(ls -t dist/Audiover-*.rpm 2>/dev/null | head -n 1); \
+	if [ -n "$$RPM_FILE" ]; then \
+		echo "[*] Yeni paket kuruluyor: $$RPM_FILE..."; \
+		sudo dnf install -y "$$RPM_FILE"; \
+	else \
+		echo "[-] Hata: dist/ icinde RPM paketi bulunamadi!" >&2; exit 1; \
+	fi
 	@update-desktop-database ~/.local/share/applications 2>/dev/null || true
 	@echo "========================================================"
-	@echo "  Audiover RPM has been successfully installed!"
+	@echo "  Audiover RPM has been successfully reinstalled!"
 	@echo "========================================================"
 
 build-deb: ## Build DEB package only
@@ -43,8 +53,14 @@ build-deb: ## Build DEB package only
 install-deb: build-deb ## Build DEB and reinstall on local system (sudo apt)
 	@echo "[+] Installing Audiover DEB package..."
 	@rm -f ~/.local/share/applications/audiover.desktop ~/.local/share/applications/Audiover.desktop 2>/dev/null || true
-	@sudo apt-get update -qq 2>/dev/null || true
-	@sudo apt-get install --reinstall -y ./dist/Audiover_*.deb 2>/dev/null || sudo apt-get install -y ./dist/Audiover_*.deb
+	@DEB_FILE=$$(ls -t dist/Audiover_*.deb 2>/dev/null | head -n 1); \
+	if [ -n "$$DEB_FILE" ]; then \
+		echo "[*] Yeni paket kuruluyor: $$DEB_FILE..."; \
+		sudo apt-get update -qq 2>/dev/null || true; \
+		sudo apt-get install --reinstall -y "$$DEB_FILE" 2>/dev/null || sudo apt-get install -y "$$DEB_FILE"; \
+	else \
+		echo "[-] Hata: dist/ icinde DEB paketi bulunamadi!" >&2; exit 1; \
+	fi
 	@update-desktop-database ~/.local/share/applications 2>/dev/null || true
 	@echo "========================================================"
 	@echo "  Audiover DEB has been successfully installed!"
@@ -79,6 +95,22 @@ test: ## Run Rust tests and TypeScript type checking
 	@npm --prefix ui run build
 	@echo "[+] Running Rust tests..."
 	@cd src && cargo test
+
+bump: ## Bump all versions (patch|minor|major). Usage: make bump TYPE=minor
+	@bash scripts/bump_version.sh $(or $(TYPE),patch)
+
+bump-patch: ## Bump patch version (1.0.1 -> 1.0.2) across tauri.conf.json, Cargo.toml, package.json
+	@bash scripts/bump_version.sh patch
+
+bump-minor: ## Bump minor version (1.0.1 -> 1.1.0) across tauri.conf.json, Cargo.toml, package.json
+	@bash scripts/bump_version.sh minor
+
+bump-major: ## Bump major version (1.0.1 -> 2.0.0) across tauri.conf.json, Cargo.toml, package.json
+	@bash scripts/bump_version.sh major
+
+set-version: ## Set exact version. Usage: make set-version VERSION=1.2.3
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make set-version VERSION=X.Y.Z"; exit 1; fi
+	@bash scripts/bump_version.sh --set $(VERSION)
 
 lint: ## Run linter and formatting checks
 	@echo "[+] Checking Rust formatting and clippy..."
