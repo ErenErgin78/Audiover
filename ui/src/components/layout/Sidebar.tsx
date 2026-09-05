@@ -10,8 +10,6 @@ export default function Sidebar() {
   const navItems: { page: PageId; icon: string; label: string }[] = [
     { page: "voice",      icon: "🎙",  label: t.nav.voice      },
     { page: "soundboard", icon: "🔊",  label: t.nav.soundboard },
-    { page: "audio",      icon: "🎚",   label: t.nav.audio      },
-    { page: "hotkeys",    icon: "⌨",  label: t.nav.hotkeys    },
     { page: "settings",   icon: "⚙",   label: t.nav.settings   },
   ];
 

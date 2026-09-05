@@ -1,4 +1,6 @@
 import { useI18n } from "../hooks/useI18n";
+import AudioSettingsSection from "../components/settings/AudioSettingsSection";
+import HotkeysSection from "../components/settings/HotkeysSection";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -16,7 +18,7 @@ export default function SettingsPage() {
   const { t, language, setLanguage, languages } = useI18n();
 
   return (
-    <div className="flex flex-col gap-5 p-6 overflow-y-auto max-w-4xl">
+    <div className="flex flex-col gap-5 p-6 overflow-y-auto w-full max-w-4xl">
       <div>
         <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
           {t.settings.title}
@@ -58,6 +60,24 @@ export default function SettingsPage() {
           })}
         </div>
       </Card>
+
+      {/* Audio & Routing */}
+      <div className="flex items-center gap-3 mt-2">
+        <h2 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 15, letterSpacing: 1, margin: 0 }}>
+          {t.audio.title}
+        </h2>
+        <div className="flex-1" style={{ height: 1, background: "var(--border)" }} />
+      </div>
+      <AudioSettingsSection />
+
+      {/* Global Hotkeys */}
+      <div className="flex items-center gap-3 mt-2">
+        <h2 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 15, letterSpacing: 1, margin: 0 }}>
+          {t.hotkeys.title}
+        </h2>
+        <div className="flex-1" style={{ height: 1, background: "var(--border)" }} />
+      </div>
+      <HotkeysSection />
     </div>
   );
 }

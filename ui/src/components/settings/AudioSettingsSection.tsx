@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { api, type AudioDevicesState } from "../hooks/useApi";
-import { useI18n } from "../hooks/useI18n";
-import ToggleSwitch from "../components/ToggleSwitch";
+import { api, type AudioDevicesState } from "../../hooks/useApi";
+import { useI18n } from "../../hooks/useI18n";
+import ToggleSwitch from "../ToggleSwitch";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -66,7 +66,7 @@ function SliderWithLabel({ value, min, max, onChange, format }: {
   );
 }
 
-export default function AudioSettingsPage() {
+export default function AudioSettingsSection() {
   const [devState, setDevState] = useState<AudioDevicesState | null>(null);
   const { t } = useI18n();
 
@@ -86,7 +86,7 @@ export default function AudioSettingsPage() {
 
   if (!devState) {
     return (
-      <div className="flex items-center justify-center h-full" style={{ color: "var(--text-muted)" }}>
+      <div className="py-6 text-center" style={{ color: "var(--text-muted)" }}>
         {t.audio.loading}
       </div>
     );
@@ -130,11 +130,7 @@ export default function AudioSettingsPage() {
   } as React.CSSProperties;
 
   return (
-    <div className="flex flex-col gap-4 p-6 overflow-y-auto w-full max-w-4xl">
-      <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
-        {t.audio.title}
-      </h1>
-
+    <>
       {/* Device Selection */}
       <Card title={t.audio.hardwareCard}>
         <Row label={t.audio.inputLabel}>
@@ -254,6 +250,6 @@ export default function AudioSettingsPage() {
           />
         </Row>
       </Card>
-    </div>
+    </>
   );
 }

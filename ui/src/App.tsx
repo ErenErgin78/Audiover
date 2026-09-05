@@ -7,8 +7,6 @@ import { useI18n } from "./hooks/useI18n";
 import Layout from "./components/layout/Layout";
 import VoicePage from "./pages/VoicePage";
 import SoundboardPage from "./pages/SoundboardPage";
-import AudioSettingsPage from "./pages/AudioSettingsPage";
-import HotkeysPage from "./pages/HotkeysPage";
 import SettingsPage from "./pages/SettingsPage";
 
 function ActivePage() {
@@ -16,8 +14,6 @@ function ActivePage() {
   switch (page) {
     case "voice":      return <VoicePage />;
     case "soundboard": return <SoundboardPage />;
-    case "audio":      return <AudioSettingsPage />;
-    case "hotkeys":    return <HotkeysPage />;
     case "settings":   return <SettingsPage />;
   }
 }
