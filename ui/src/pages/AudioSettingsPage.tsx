@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { api, type AudioDevicesState } from "../hooks/useApi";
 import { useI18n } from "../hooks/useI18n";
+import ToggleSwitch from "../components/ToggleSwitch";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section
-      className="rounded-xl p-4 flex flex-col gap-3"
+      className="rounded-xl p-4 flex flex-col gap-3 w-full min-w-0"
       style={{ background: "var(--bg-card)", border: "1px solid var(--border)" }}
     >
       <h2 style={{ color: "var(--accent)", fontWeight: 700, fontSize: 13, margin: 0 }}>{title}</h2>
@@ -14,10 +15,35 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+  htmlFor,
+  labelWidth = 180,
+}: {
+  label: string;
+  children: React.ReactNode;
+  htmlFor?: string;
+  labelWidth?: number;
+}) {
   return (
-    <div className="flex items-center gap-3">
-      <span style={{ color: "var(--text-muted)", fontSize: 12, minWidth: 180 }}>{label}</span>
+    <div className="flex items-center gap-3 w-full min-w-0">
+      {htmlFor ? (
+        <label
+          htmlFor={htmlFor}
+          className="cursor-pointer select-none shrink-0"
+          style={{ color: "var(--text-muted)", fontSize: 12, minWidth: labelWidth }}
+        >
+          {label}
+        </label>
+      ) : (
+        <span
+          className="shrink-0"
+          style={{ color: "var(--text-muted)", fontSize: 12, minWidth: labelWidth }}
+        >
+          {label}
+        </span>
+      )}
       {children}
     </div>
   );
@@ -29,11 +55,11 @@ function SliderWithLabel({ value, min, max, onChange, format }: {
   format: (v: number) => string;
 }) {
   return (
-    <div className="flex items-center gap-2 flex-1">
+    <div className="flex items-center gap-2 flex-1 min-w-0">
       <input type="range" min={min} max={max} value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="flex-1" style={{ accentColor: "var(--accent)" }} />
-      <span style={{ color: "var(--accent)", fontSize: 12, minWidth: 44, textAlign: "right" }}>
+        className="flex-1 min-w-0" style={{ accentColor: "var(--accent)" }} />
+      <span style={{ color: "var(--accent)", fontSize: 12, minWidth: 44, textAlign: "right", flexShrink: 0 }}>
         {format(value)}
       </span>
     </div>
@@ -93,6 +119,8 @@ export default function AudioSettingsPage() {
     padding: "6px 10px",
     fontSize: 12,
     flex: 1,
+    minWidth: 0,
+    maxWidth: "100%",
     outline: "none",
   } as React.CSSProperties;
 
@@ -102,7 +130,7 @@ export default function AudioSettingsPage() {
   } as React.CSSProperties;
 
   return (
-    <div className="flex flex-col gap-4 p-6 overflow-y-auto max-w-4xl">
+    <div className="flex flex-col gap-4 p-6 overflow-y-auto w-full max-w-4xl">
       <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
         {t.audio.title}
       </h1>
@@ -183,33 +211,25 @@ export default function AudioSettingsPage() {
 
       {/* Audio Levels */}
       <Card title={t.audio.levelsCard}>
-        <Row label={t.audio.hearMyselfLabel}>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={devState.hear_myself}
-              onChange={async (e) => {
-                await api.setHearMyself(e.target.checked);
-                setDevState((d) => d ? { ...d, hear_myself: e.target.checked } : d);
-              }}
-              className="w-4 h-4 accent-[var(--accent)]"
-            />
-            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{t.audio.hearMyselfLabel}</span>
-          </label>
+        <Row label={t.audio.hearMyselfLabel} htmlFor="hear-myself-toggle" labelWidth={250}>
+          <ToggleSwitch
+            id="hear-myself-toggle"
+            checked={devState.hear_myself}
+            onChange={async (checked) => {
+              await api.setHearMyself(checked);
+              setDevState((d) => d ? { ...d, hear_myself: checked } : d);
+            }}
+          />
         </Row>
-        <Row label={t.audio.hearSoundboardLabel}>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={devState.hear_soundboard}
-              onChange={async (e) => {
-                await api.setHearSoundboard(e.target.checked);
-                setDevState((d) => d ? { ...d, hear_soundboard: e.target.checked } : d);
-              }}
-              className="w-4 h-4 accent-[var(--accent)]"
-            />
-            <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{t.audio.hearSoundboardLabel}</span>
-          </label>
+        <Row label={t.audio.hearSoundboardLabel} htmlFor="hear-soundboard-toggle" labelWidth={250}>
+          <ToggleSwitch
+            id="hear-soundboard-toggle"
+            checked={devState.hear_soundboard}
+            onChange={async (checked) => {
+              await api.setHearSoundboard(checked);
+              setDevState((d) => d ? { ...d, hear_soundboard: checked } : d);
+            }}
+          />
         </Row>
         <Row label={t.audio.micGainLabel}>
           <SliderWithLabel

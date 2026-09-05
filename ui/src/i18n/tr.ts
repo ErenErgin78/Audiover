@@ -103,7 +103,6 @@ export const tr: TranslationSchema = {
     actionShortcutsCard: "Genel Eylem Kısayolları",
     actionHeader: "Eylem",
     keyHeader: "Tuş",
-    soundboardNote: "Soundboard kısayolları ses kartları üzerinden atanabilir.",
     loading: "Kısayollar yükleniyor...",
     muteMicAction: "Mikrofonu Sustur / Aç",
     bypassDspAction: "Tüm DSP Efektlerini Kapat",

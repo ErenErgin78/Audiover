@@ -101,7 +101,6 @@ export interface TranslationSchema {
     actionShortcutsCard: string;
     actionHeader: string;
     keyHeader: string;
-    soundboardNote: string;
     loading: string;
     muteMicAction: string;
     bypassDspAction: string;

@@ -124,7 +124,6 @@ export default function HotkeysPage() {
           >
             {t.hotkeys.actionShortcutsCard}
           </h2>
-          <span style={{ color: "var(--text-muted)", fontSize: 11 }}>{t.hotkeys.changeHint}</span>
           <button
             onClick={handleReset}
             className="px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer"
@@ -207,9 +206,6 @@ export default function HotkeysPage() {
           </tbody>
         </table>
       </section>
-      <p className="text-xs" style={{ color: "var(--text-muted)" }}>
-        {t.hotkeys.soundboardNote}
-      </p>
     </div>
   );
 }
