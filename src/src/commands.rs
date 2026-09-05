@@ -2,7 +2,9 @@ use crate::audio::dsp::{DSPOptions, VoiceDSP};
 use crate::audio::stream::{
     is_virtual_device_name, AudioDevicesState, AudioStreamEngine, Meters,
 };
-use crate::input::hotkeys::{HotkeyItem, HotkeyManager, HotkeyStatus};
+use crate::input::hotkeys::{
+    default_bindings, is_known_action, normalize_key, HotkeyManager, HotkeyStatus,
+};
 use crate::log_buffer::{LogBuffer, LogEntry};
 use crate::soundboard::manager::{SoundItem, SoundboardManager};
 use crate::soundboard::player::{SoundProgress, SoundboardPlayer};
@@ -158,6 +160,44 @@ fn persist_language(state: &AppContext) {
     }
     settings["app"]["language"] = serde_json::json!(*state.language.lock());
     write_settings_file(&state.config_path, &settings);
+}
+
+fn persist_hotkeys(state: &AppContext) {
+    let mut settings = read_settings_file(&state.config_path);
+    if !settings.is_object() {
+        settings = serde_json::json!({});
+    }
+    // Only persist known action bindings (ignore legacy direct-key entries).
+    let snapshot = state.hotkey_manager.bindings_snapshot();
+    let mut map = serde_json::Map::new();
+    for (id, key) in snapshot {
+        if is_known_action(&id) {
+            map.insert(id, serde_json::Value::String(key));
+        }
+    }
+    settings["hotkeys"] = serde_json::Value::Object(map);
+    write_settings_file(&state.config_path, &settings);
+}
+
+/// Loads persisted `hotkeys: { action_id: "KEY" }` on startup.
+/// Unknown ids and empty keys are dropped; missing ids fall back to defaults.
+pub fn load_persisted_hotkeys(config_path: &Path) -> HashMap<String, String> {
+    let mut out = default_bindings();
+    let settings = read_settings_file(config_path);
+    if let Some(map) = settings.get("hotkeys").and_then(|v| v.as_object()) {
+        for (id, v) in map {
+            if !is_known_action(id) {
+                continue;
+            }
+            if let Some(key) = v.as_str() {
+                let normalized = normalize_key(key);
+                if !normalized.is_empty() {
+                    out.insert(id.clone(), normalized);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Loads persisted `{ custom_presets, active_preset, language }` on startup.
@@ -699,34 +739,72 @@ pub fn set_monitor_gain(gain: f32, state: State<'_, AppContext>) {
 
 #[tauri::command]
 pub fn get_hotkey_status(state: State<'_, AppContext>) -> HotkeyStatus {
-    let status = state.hotkey_manager.get_status();
-    // Python parity: the UI matches on these fixed action labels
-    // (HotkeysPage.getActionLabel), so report them explicitly instead of
-    // echoing raw key names.
-    let fixed = vec![
-        HotkeyItem {
-            action: "Mute Microphone".to_string(),
-            key: "F9".to_string(),
-        },
-        HotkeyItem {
-            action: "Bypass All DSP Effects".to_string(),
-            key: "F10".to_string(),
-        },
-        HotkeyItem {
-            action: "Stop All Sounds (Panic)".to_string(),
-            key: "F11".to_string(),
-        },
-        HotkeyItem {
-            action: "Toggle Hear Myself (Loopback)".to_string(),
-            key: "F8".to_string(),
-        },
-    ];
-    HotkeyStatus {
-        backend: status.backend,
-        has_permission: status.has_permission,
-        is_running: status.is_running,
-        hotkeys: fixed,
+    state.hotkey_manager.get_status()
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn set_hotkey(action_id: String, key: String, state: State<'_, AppContext>) -> serde_json::Value {
+    let action_id = action_id.trim().to_string();
+    if !is_known_action(&action_id) {
+        return serde_json::json!({ "ok": false, "error": "Unknown hotkey action" });
     }
+    let normalized = normalize_key(&key);
+    if normalized.is_empty() {
+        return serde_json::json!({ "ok": false, "error": "Key cannot be empty" });
+    }
+    if normalized.len() > 16 {
+        return serde_json::json!({ "ok": false, "error": "Invalid key" });
+    }
+    // Conflict with another global action?
+    let snapshot = state.hotkey_manager.bindings_snapshot();
+    for (id, bound) in snapshot.iter() {
+        if id != &action_id && *bound == normalized {
+            return serde_json::json!({
+                "ok": false,
+                "error": "conflict",
+                "conflict": id,
+                "message": format!("Key is already assigned to {}", id),
+            });
+        }
+    }
+    // Conflict with a soundboard hotkey?
+    for sound in state.soundboard_manager.get_all_sounds() {
+        if let Some(hk) = sound.hotkey {
+            if hk.trim().to_uppercase() == normalized {
+                return serde_json::json!({
+                    "ok": false,
+                    "error": "conflict",
+                    "conflict": sound.name,
+                    "message": format!("Key is already used by sound \"{}\"", sound.name),
+                });
+            }
+        }
+    }
+    // `set_binding` re-checks action conflicts; None means success here.
+    if let Some(conflict) = state.hotkey_manager.set_binding(&action_id, &normalized) {
+        return serde_json::json!({
+            "ok": false,
+            "error": "conflict",
+            "conflict": conflict,
+        });
+    }
+    persist_hotkeys(&state);
+    serde_json::json!({
+        "ok": true,
+        "actionId": action_id,
+        "key": normalized,
+        "hotkeys": state.hotkey_manager.get_status().hotkeys,
+    })
+}
+
+#[tauri::command]
+pub fn reset_hotkeys(state: State<'_, AppContext>) -> serde_json::Value {
+    state.hotkey_manager.reset_bindings();
+    persist_hotkeys(&state);
+    serde_json::json!({
+        "ok": true,
+        "hotkeys": state.hotkey_manager.get_status().hotkeys,
+    })
 }
 
 #[tauri::command]

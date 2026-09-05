@@ -109,6 +109,11 @@ export const en: TranslationSchema = {
     bypassDspAction: "Bypass All DSP Effects",
     stopAllAction: "Stop All Sounds (Panic)",
     toggleHearMyselfAction: "Toggle Hear Myself (Loopback)",
+    changeHint: "Click a key to remap it",
+    resetDefaults: "Reset to defaults",
+    pressKeyPrompt: "Press a key… (Esc to cancel)",
+    cancel: "Cancel",
+    conflictPrefix: "Already in use:",
   },
   settings: {
     title: "Application Settings",

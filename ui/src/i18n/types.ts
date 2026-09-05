@@ -107,6 +107,11 @@ export interface TranslationSchema {
     bypassDspAction: string;
     stopAllAction: string;
     toggleHearMyselfAction: string;
+    changeHint: string;
+    resetDefaults: string;
+    pressKeyPrompt: string;
+    cancel: string;
+    conflictPrefix: string;
   };
   settings: {
     title: string;

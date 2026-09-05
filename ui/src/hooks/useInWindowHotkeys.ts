@@ -22,6 +22,10 @@ export function useInWindowHotkeys() {
     }
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // A hotkey-remap capture overlay is active — let it own the keypress.
+      if (document.body.dataset.capturingHotkey === "1") {
+        return;
+      }
       // Do not trigger hotkeys if user is actively typing in a form input or modal
       const target = e.target as HTMLElement | null;
       if (

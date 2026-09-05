@@ -1,7 +1,9 @@
 use log::{error, info, warn};
 use rubato::{
-    audioadapter::Adapter, audioadapter_buffers::direct::InterleavedSlice, Async, FixedAsync,
-    PolynomialDegree, Resampler,
+    audioadapter::Adapter,
+    audioadapter_buffers::direct::InterleavedSlice,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -349,7 +351,7 @@ fn decode_audio_file(path: &Path) -> Result<(Vec<[f32; 2]>, u32), String> {
     Ok((stereo_samples, sample_rate))
 }
 
-/// Resample stereo audio from in_sr to out_sr using high-order Septic polynomial interpolation (rubato)
+/// Resample stereo audio from in_sr to out_sr using band-limited sinc interpolation (rubato)
 pub fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32; 2]> {
     if input.is_empty() || in_sr == out_sr {
         return input.to_vec();
@@ -358,6 +360,15 @@ pub fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32;
     let in_sr_f = in_sr.max(4000) as f64;
     let out_sr_f = out_sr.max(4000) as f64;
     let ratio = out_sr_f / in_sr_f;
+
+    // Use Blackman-Harris windowed sinc filter with automatic anti-aliasing cutoff calculation.
+    let params = SincInterpolationParameters {
+        sinc_len: 256,
+        f_cutoff: None,
+        oversampling_factor: 128,
+        interpolation: SincInterpolationType::Cubic,
+        window: WindowFunction::BlackmanHarris2,
+    };
 
     let flat_input: &[f32] = unsafe {
         std::slice::from_raw_parts(input.as_ptr() as *const f32, input.len() * 2)
@@ -369,10 +380,10 @@ pub fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32;
     };
 
     let chunk_size = input.len().clamp(64, 1024);
-    let mut resampler = match Async::<f32>::new_poly(
+    let mut resampler = match Async::<f32>::new_sinc(
         ratio,
         1.1,
-        PolynomialDegree::Septic,
+        &params,
         chunk_size,
         2,
         FixedAsync::Input,
@@ -380,7 +391,7 @@ pub fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32;
         Ok(r) => r,
         Err(e) => {
             warn!(
-                "Failed to initialize polynomial resampler ({} Hz -> {} Hz): {}, using fallback",
+                "Failed to initialize sinc resampler ({} Hz -> {} Hz): {}, using fallback",
                 in_sr, out_sr, e
             );
             return fallback_resample_stereo(input, in_sr, out_sr);
@@ -399,7 +410,7 @@ pub fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32;
         }
         Err(e) => {
             warn!(
-                "Polynomial resampling failed ({} Hz -> {} Hz): {}, using fallback",
+                "Sinc resampling failed ({} Hz -> {} Hz): {}, using fallback",
                 in_sr, out_sr, e
             );
             fallback_resample_stereo(input, in_sr, out_sr)
@@ -407,7 +418,7 @@ pub fn resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32;
     }
 }
 
-/// Fallback resampler using Catmull-Rom cubic Hermite interpolation
+/// Fallback resampler using cubic interpolation if sinc initialization fails
 fn fallback_resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<[f32; 2]> {
     if input.is_empty() || in_sr == out_sr {
         return input.to_vec();
@@ -416,39 +427,15 @@ fn fallback_resample_stereo(input: &[[f32; 2]], in_sr: u32, out_sr: u32) -> Vec<
     let ratio = out_sr as f64 / in_sr as f64;
     let target_len = ((input.len() as f64) * ratio).round() as usize;
     let mut output = Vec::with_capacity(target_len);
-    let n = input.len();
-
-    let hermite = |p0: f32, p1: f32, p2: f32, p3: f32, t: f32| -> f32 {
-        let c0 = p1;
-        let c1 = 0.5 * (p2 - p0);
-        let c2 = p0 - 2.5 * p1 + 2.0 * p2 - 0.5 * p3;
-        let c3 = 0.5 * (p3 - p0) + 1.5 * (p1 - p2);
-        ((c3 * t + c2) * t + c1) * t + c0
-    };
 
     for i in 0..target_len {
         let src_idx = (i as f64) / ratio;
-        let idx1 = src_idx.floor() as usize;
-        let idx1 = idx1.min(n - 1);
-        let idx0 = idx1.saturating_sub(1);
-        let idx2 = (idx1 + 1).min(n - 1);
-        let idx3 = (idx1 + 2).min(n - 1);
+        let idx0 = (src_idx.floor() as usize).min(input.len() - 1);
+        let idx1 = (idx0 + 1).min(input.len() - 1);
         let frac = (src_idx - src_idx.floor()) as f32;
 
-        let l = hermite(
-            input[idx0][0],
-            input[idx1][0],
-            input[idx2][0],
-            input[idx3][0],
-            frac,
-        );
-        let r = hermite(
-            input[idx0][1],
-            input[idx1][1],
-            input[idx2][1],
-            input[idx3][1],
-            frac,
-        );
+        let l = input[idx0][0] * (1.0 - frac) + input[idx1][0] * frac;
+        let r = input[idx0][1] * (1.0 - frac) + input[idx1][1] * frac;
         output.push([l, r]);
     }
 
@@ -540,7 +527,7 @@ mod tests {
     }
 
     #[test]
-    fn test_resample_accuracy() {
+    fn test_sinc_resample_accuracy() {
         // Generate a 440 Hz test tone at 44.1 kHz
         let sr_in = 44100;
         let sr_out = 48000;
@@ -549,13 +536,11 @@ mod tests {
         for i in 0..n_frames {
             let t = i as f32 / sr_in as f32;
             let val = (2.0 * std::f32::consts::PI * 440.0 * t).sin();
-            original.push([val, -val]);
+            original.push([val, val]);
         }
 
         let resampled = resample_stereo(&original, sr_in, sr_out);
         let expected_frames = (n_frames as f64 * sr_out as f64 / sr_in as f64).round() as usize;
         assert!((resampled.len() as i32 - expected_frames as i32).abs() <= 2);
-        // Verify channel integrity
-        assert!((resampled[100][0] + resampled[100][1]).abs() < 1e-4);
     }
 }

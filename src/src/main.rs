@@ -11,8 +11,8 @@ use audio::dsp::VoiceDSP;
 use audio::router::AudioRouter;
 use audio::stream::AudioStreamEngine;
 use commands::{
-    get_default_presets, load_persisted_audio, load_persisted_voice_and_app,
-    preset_to_dsp_options, AppContext,
+    get_default_presets, load_persisted_audio, load_persisted_hotkeys,
+    load_persisted_voice_and_app, preset_to_dsp_options, AppContext,
 };
 use input::hotkeys::HotkeyManager;
 use log::{error, info, warn};
@@ -168,20 +168,27 @@ fn main() {
         config_path.display(),
     );
 
-    // 5. Hotkey Manager
-    let hotkey_manager = Arc::new(HotkeyManager::new());
+    // 5. Hotkey Manager (bindings restored from settings.json `hotkeys`).
+    let persisted_bindings = load_persisted_hotkeys(&config_path);
+    let hotkey_manager = Arc::new(HotkeyManager::with_bindings(persisted_bindings.clone()));
+    let key_for = |id: &str, fallback: &str| -> String {
+        persisted_bindings
+            .get(id)
+            .cloned()
+            .unwrap_or_else(|| fallback.to_string())
+    };
 
-    // Register default global hotkeys
+    // Register global hotkeys under stable action ids so they can be remapped.
     {
         let stream_m = stream_engine.clone();
-        hotkey_manager.register("F9", move || {
+        hotkey_manager.register_action("mute_mic", &key_for("mute_mic", "F9"), move || {
             let current = stream_m.is_muted.load(std::sync::atomic::Ordering::Relaxed);
             stream_m.set_muted(!current);
         });
     }
     {
         let dsp_b = dsp.clone();
-        hotkey_manager.register("F10", move || {
+        hotkey_manager.register_action("bypass_dsp", &key_for("bypass_dsp", "F10"), move || {
             let mut d = dsp_b.lock();
             let mut opts = d.options.clone();
             opts.bypass = !opts.bypass;
@@ -190,16 +197,20 @@ fn main() {
     }
     {
         let sb_p = soundboard_player.clone();
-        hotkey_manager.register("F11", move || {
+        hotkey_manager.register_action("stop_all", &key_for("stop_all", "F11"), move || {
             sb_p.stop_all();
         });
     }
     {
         let stream_h = stream_engine.clone();
-        hotkey_manager.register("F8", move || {
-            let current = stream_h.hear_myself.load(std::sync::atomic::Ordering::Relaxed);
-            stream_h.set_hear_myself(!current);
-        });
+        hotkey_manager.register_action(
+            "toggle_hear_myself",
+            &key_for("toggle_hear_myself", "F8"),
+            move || {
+                let current = stream_h.hear_myself.load(std::sync::atomic::Ordering::Relaxed);
+                stream_h.set_hear_myself(!current);
+            },
+        );
     }
 
     {
@@ -276,6 +287,8 @@ fn main() {
             commands::set_mic_gain,
             commands::set_monitor_gain,
             commands::get_hotkey_status,
+            commands::set_hotkey,
+            commands::reset_hotkeys,
             commands::trigger_hotkey,
             commands::get_logs,
             commands::clear_logs,

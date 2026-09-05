@@ -132,7 +132,7 @@ export interface HotkeyStatus {
   backend: "portal" | "evdev" | "in_window";
   has_permission: boolean;
   is_running: boolean;
-  hotkeys: Array<{ action: string; key: string }>;
+  hotkeys: Array<{ id: string; action: string; key: string }>;
 }
 
 export interface PresetConfig {
@@ -462,6 +462,22 @@ export const api = {
     if (hasTauri()) return invoke<HotkeyStatus>("get_hotkey_status");
     const py = await waitForPyWebView();
     return py.get_hotkey_status();
+  },
+
+  setHotkey: async (actionId: string, key: string) => {
+    if (hasTauri())
+      return invoke<{ ok: boolean; key?: string; error?: string; message?: string; conflict?: string }>(
+        "set_hotkey",
+        { actionId, key }
+      );
+    const py = await waitForPyWebView();
+    return py.set_hotkey(actionId, key);
+  },
+
+  resetHotkeys: async () => {
+    if (hasTauri()) return invoke<{ ok: boolean; hotkeys?: HotkeyStatus["hotkeys"] }>("reset_hotkeys");
+    const py = await waitForPyWebView();
+    return py.reset_hotkeys();
   },
 
   triggerHotkey: async (key: string) => {

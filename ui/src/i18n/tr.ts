@@ -88,7 +88,7 @@ export const tr: TranslationSchema = {
     loading: "Ses aygıtları yükleniyor...",
   },
   hotkeys: {
-    title: "Genel Kısayollar (Global Hotkeys)",
+    title: "Genel Kısayollar",
     statusCard: "Linux & Masaüstü Kısayol Erişim Durumu",
     tierPortalBadge: "Kademe 1 — XDG Desktop Portal",
     tierPortalTitle: "XDG Desktop Portal Aktif",
@@ -109,6 +109,11 @@ export const tr: TranslationSchema = {
     bypassDspAction: "Tüm DSP Efektlerini Kapat",
     stopAllAction: "Tüm Sesleri Durdur",
     toggleHearMyselfAction: "Kendi Sesini Duy",
+    changeHint: "Değiştirmek için bir tuşa tıklayın",
+    resetDefaults: "Varsayılanlara sıfırla",
+    pressKeyPrompt: "Bir tuşa basın… (Vazgeçmek için Esc)",
+    cancel: "Vazgeç",
+    conflictPrefix: "Zaten kullanımda:",
   },
   settings: {
     title: "Uygulama Ayarları",

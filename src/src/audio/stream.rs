@@ -9,8 +9,9 @@ use log::{error, info, warn};
 use parking_lot::Mutex;
 use rtrb::RingBuffer;
 use rubato::{
-    audioadapter_buffers::direct::InterleavedSlice, Async, FixedAsync, Indexing, PolynomialDegree,
-    Resampler,
+    audioadapter_buffers::direct::InterleavedSlice,
+    Async, FixedAsync, Indexing, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
@@ -62,6 +63,10 @@ pub struct Meters {
 /// Sentinel stored in `selected_monitor_name` when the monitor output is
 /// explicitly disabled (mirrors Python `"none"`).
 const MONITOR_DISABLED_SENTINEL: &str = "none";
+
+/// Number of stereo blocks buffered in the cross-thread rings.
+/// Mirrors Python `queue.Queue(maxsize=32)`.
+const RING_BLOCKS: usize = 32;
 
 /// Virtual-sink discovery retries (PipeWire may need a moment after
 /// `module-null-sink` is loaded). Mirrors Python's brief wait + retry.
@@ -168,8 +173,8 @@ fn f32_to_u16(v: f32) -> u16 {
     (v.clamp(-1.0, 1.0) * 32768.0 + 32768.0).clamp(0.0, 65535.0) as u16
 }
 
-/// Real-time streaming stereo resampler powered by rubato Septic polynomial interpolation.
-/// Designed for zero-allocation processing on audio block callbacks with zero group delay.
+/// Real-time streaming stereo resampler powered by rubato band-limited sinc interpolation.
+/// Designed for zero-allocation processing on audio block callbacks.
 pub struct StreamingStereoResampler {
     resampler: Async<f32>,
     in_buf: Vec<f32>,
@@ -186,10 +191,18 @@ impl StreamingStereoResampler {
         let out_sr_f = out_sr.max(4000) as f64;
         let ratio = out_sr_f / in_sr_f;
 
-        let resampler = Async::<f32>::new_poly(
+        let params = SincInterpolationParameters {
+            sinc_len: 128,
+            f_cutoff: None,
+            oversampling_factor: 128,
+            interpolation: SincInterpolationType::Cubic,
+            window: WindowFunction::BlackmanHarris2,
+        };
+
+        let resampler = Async::<f32>::new_sinc(
             ratio,
             1.1,
-            PolynomialDegree::Septic,
+            &params,
             chunk_size,
             2,
             FixedAsync::Input,
@@ -276,39 +289,93 @@ impl StreamingStereoResampler {
 
 fn make_output_callback_f32(
     mut cons: rtrb::Consumer<[f32; 2]>,
+    capacity: usize,
+    block_size: usize,
 ) -> impl FnMut(&mut [f32], &cpal::OutputCallbackInfo) + Send + 'static {
+    let mut last_sample = [0.0f32, 0.0];
+    let max_headroom = capacity.saturating_sub(block_size * 2);
+
     move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
         let frames = data.len() / 2;
+        if cons.slots() > max_headroom {
+            let _ = cons.pop();
+        }
         for i in 0..frames {
-            let f = cons.pop().unwrap_or([0.0, 0.0]);
-            data[i * 2] = f[0];
-            data[i * 2 + 1] = f[1];
+            match cons.pop() {
+                Ok(f) => {
+                    last_sample = f;
+                    data[i * 2] = f[0];
+                    data[i * 2 + 1] = f[1];
+                }
+                Err(_) => {
+                    last_sample[0] *= 0.85;
+                    last_sample[1] *= 0.85;
+                    data[i * 2] = last_sample[0];
+                    data[i * 2 + 1] = last_sample[1];
+                }
+            }
         }
     }
 }
 
 fn make_output_callback_i16(
     mut cons: rtrb::Consumer<[f32; 2]>,
+    capacity: usize,
+    block_size: usize,
 ) -> impl FnMut(&mut [i16], &cpal::OutputCallbackInfo) + Send + 'static {
+    let mut last_sample = [0.0f32, 0.0];
+    let max_headroom = capacity.saturating_sub(block_size * 2);
+
     move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
         let frames = data.len() / 2;
+        if cons.slots() > max_headroom {
+            let _ = cons.pop();
+        }
         for i in 0..frames {
-            let f = cons.pop().unwrap_or([0.0, 0.0]);
-            data[i * 2] = f32_to_i16(f[0]);
-            data[i * 2 + 1] = f32_to_i16(f[1]);
+            match cons.pop() {
+                Ok(f) => {
+                    last_sample = f;
+                    data[i * 2] = f32_to_i16(f[0]);
+                    data[i * 2 + 1] = f32_to_i16(f[1]);
+                }
+                Err(_) => {
+                    last_sample[0] *= 0.85;
+                    last_sample[1] *= 0.85;
+                    data[i * 2] = f32_to_i16(last_sample[0]);
+                    data[i * 2 + 1] = f32_to_i16(last_sample[1]);
+                }
+            }
         }
     }
 }
 
 fn make_output_callback_u16(
     mut cons: rtrb::Consumer<[f32; 2]>,
+    capacity: usize,
+    block_size: usize,
 ) -> impl FnMut(&mut [u16], &cpal::OutputCallbackInfo) + Send + 'static {
+    let mut last_sample = [0.0f32, 0.0];
+    let max_headroom = capacity.saturating_sub(block_size * 2);
+
     move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
         let frames = data.len() / 2;
+        if cons.slots() > max_headroom {
+            let _ = cons.pop();
+        }
         for i in 0..frames {
-            let f = cons.pop().unwrap_or([0.0, 0.0]);
-            data[i * 2] = f32_to_u16(f[0]);
-            data[i * 2 + 1] = f32_to_u16(f[1]);
+            match cons.pop() {
+                Ok(f) => {
+                    last_sample = f;
+                    data[i * 2] = f32_to_u16(f[0]);
+                    data[i * 2 + 1] = f32_to_u16(f[1]);
+                }
+                Err(_) => {
+                    last_sample[0] *= 0.85;
+                    last_sample[1] *= 0.85;
+                    data[i * 2] = f32_to_u16(last_sample[0]);
+                    data[i * 2 + 1] = f32_to_u16(last_sample[1]);
+                }
+            }
         }
     }
 }
@@ -919,15 +986,31 @@ impl AudioStreamEngine {
             .map(|(cfg, _)| cfg.sample_rate)
             .unwrap_or(in_rate);
 
-        // Rings hold stereo frames; pre-buffered with 2 blocks of silence (like Python)
-        // so output streams have a clean startup cushion without latency.
-        let ring_capacity = (block_size * 16).max(4096);
-        let (mut virt_prod, virt_cons) = RingBuffer::<[f32; 2]>::new(ring_capacity);
-        let (mut mon_prod, mon_cons) = RingBuffer::<[f32; 2]>::new(ring_capacity);
+        // Rings hold stereo frames; sized and pre-buffered with a stable ~20-25ms cushion
+        // to prevent startup underruns and absorb PipeWire/ALSA scheduling jitter.
+        let base_ring_capacity = (block_size * RING_BLOCKS).max(8192);
 
-        let prefill = block_size * 2;
-        for _ in 0..prefill {
+        let virt_capacity =
+            ((base_ring_capacity as f64) * (virt_rate as f64 / in_rate as f64)).ceil() as usize;
+        let virt_capacity = virt_capacity.max(8192);
+        let (mut virt_prod, virt_cons) = RingBuffer::<[f32; 2]>::new(virt_capacity);
+
+        let mon_capacity =
+            ((base_ring_capacity as f64) * (mon_rate as f64 / in_rate as f64)).ceil() as usize;
+        let mon_capacity = mon_capacity.max(8192);
+        let (mut mon_prod, mon_cons) = RingBuffer::<[f32; 2]>::new(mon_capacity);
+
+        let virt_prefill =
+            (((block_size * 4) as f64) * (virt_rate as f64 / in_rate as f64)).ceil() as usize;
+        let virt_prefill = virt_prefill.max(1024).min(virt_capacity / 2);
+        for _ in 0..virt_prefill {
             let _ = virt_prod.push([0.0, 0.0]);
+        }
+
+        let mon_prefill =
+            (((block_size * 4) as f64) * (mon_rate as f64 / in_rate as f64)).ceil() as usize;
+        let mon_prefill = mon_prefill.max(1024).min(mon_capacity / 2);
+        for _ in 0..mon_prefill {
             let _ = mon_prod.push([0.0, 0.0]);
         }
 
@@ -1075,7 +1158,7 @@ impl AudioStreamEngine {
                     SampleFormat::F32 => v_dev
                         .build_output_stream(
                             v_config,
-                            make_output_callback_f32(virt_cons),
+                            make_output_callback_f32(virt_cons, virt_capacity, block_size),
                             virt_err,
                             None,
                         )
@@ -1083,7 +1166,7 @@ impl AudioStreamEngine {
                     SampleFormat::I16 => v_dev
                         .build_output_stream(
                             v_config,
-                            make_output_callback_i16(virt_cons),
+                            make_output_callback_i16(virt_cons, virt_capacity, block_size),
                             virt_err,
                             None,
                         )
@@ -1091,7 +1174,7 @@ impl AudioStreamEngine {
                     SampleFormat::U16 => v_dev
                         .build_output_stream(
                             v_config,
-                            make_output_callback_u16(virt_cons),
+                            make_output_callback_u16(virt_cons, virt_capacity, block_size),
                             virt_err,
                             None,
                         )
@@ -1147,7 +1230,7 @@ impl AudioStreamEngine {
                     SampleFormat::F32 => m_dev
                         .build_output_stream(
                             m_config,
-                            make_output_callback_f32(mon_cons),
+                            make_output_callback_f32(mon_cons, mon_capacity, block_size),
                             mon_err,
                             None,
                         )
@@ -1155,7 +1238,7 @@ impl AudioStreamEngine {
                     SampleFormat::I16 => m_dev
                         .build_output_stream(
                             m_config,
-                            make_output_callback_i16(mon_cons),
+                            make_output_callback_i16(mon_cons, mon_capacity, block_size),
                             mon_err,
                             None,
                         )
@@ -1163,7 +1246,7 @@ impl AudioStreamEngine {
                     SampleFormat::U16 => m_dev
                         .build_output_stream(
                             m_config,
-                            make_output_callback_u16(mon_cons),
+                            make_output_callback_u16(mon_cons, mon_capacity, block_size),
                             mon_err,
                             None,
                         )
@@ -1411,7 +1494,7 @@ impl PacatStream {
                 "--format=float32le",
                 &format!("--rate={}", sample_rate),
                 "--channels=2",
-                "--latency-msec=10",
+                "--latency-msec=25",
                 "--raw",
                 "--stream-name=Audiover_Virtual_Mic",
             ])
@@ -1433,28 +1516,48 @@ impl PacatStream {
             .name("audiover-virt-pacat".into())
             .spawn(move || {
                 use std::io::Write;
-                let chunk_limit = block_size.max(64);
+                let chunk_limit = block_size.max(256);
                 let mut byte_buf = Vec::<u8>::with_capacity(chunk_limit * 8);
+                let mut last_sample = [0.0f32, 0.0];
+
+                // Wait for initial pre-buffering cushion before streaming to pacat
+                let mut waits = 0;
+                while running_clone.load(Ordering::Relaxed) && consumer.slots() < block_size && waits < 50 {
+                    std::thread::sleep(Duration::from_millis(2));
+                    waits += 1;
+                }
 
                 while running_clone.load(Ordering::Relaxed) {
                     byte_buf.clear();
                     let mut count = 0;
                     while count < chunk_limit {
-                        if let Ok(frame) = consumer.pop() {
-                            byte_buf.extend_from_slice(&frame[0].to_le_bytes());
-                            byte_buf.extend_from_slice(&frame[1].to_le_bytes());
-                            count += 1;
-                        } else {
-                            break;
+                        match consumer.pop() {
+                            Ok(frame) => {
+                                last_sample = frame;
+                                byte_buf.extend_from_slice(&frame[0].to_le_bytes());
+                                byte_buf.extend_from_slice(&frame[1].to_le_bytes());
+                                count += 1;
+                            }
+                            Err(_) => {
+                                break;
+                            }
                         }
                     }
 
-                    if !byte_buf.is_empty() {
-                        if stdin.write_all(&byte_buf).is_err() || stdin.flush().is_err() {
+                    if count > 0 {
+                        if stdin.write_all(&byte_buf).is_err() {
                             break;
                         }
                     } else {
-                        std::thread::sleep(Duration::from_micros(500));
+                        // Soft decay to avoid harsh click on temporary underrun
+                        if last_sample[0].abs() > 0.001 || last_sample[1].abs() > 0.001 {
+                            last_sample[0] *= 0.85;
+                            last_sample[1] *= 0.85;
+                            let b0 = last_sample[0].to_le_bytes();
+                            let b1 = last_sample[1].to_le_bytes();
+                            let _ = stdin.write_all(&[b0[0], b0[1], b0[2], b0[3], b1[0], b1[1], b1[2], b1[3]]);
+                        }
+                        std::thread::sleep(Duration::from_millis(1));
                     }
                 }
             })
@@ -1574,23 +1677,19 @@ mod tests {
         let frames = vec![[0.5, -0.5]; 256];
         resampler.resample_and_push(&frames, &mut prod);
         assert!(cons.slots() > 0);
-        // First block produces ~753-768 frames due to initial polynomial filter lead-in
+        // First block produces ~762 frames due to initial sinc filter group delay
         let first_count = cons.slots();
         assert!(
-            (first_count as i32 - 768).abs() <= 20,
+            (first_count as i32 - 768).abs() <= 10,
             "Expected ~768 frames, got {}",
             first_count
         );
 
-        // Subsequent blocks produce ~768 frames (with fractional phase tracking within +-1 frame)
+        // Subsequent blocks produce exactly 768 frames
         resampler.resample_and_push(&frames, &mut prod);
         let total_count = cons.slots();
         let second_chunk = total_count - first_count;
-        assert!(
-            (second_chunk as i32 - 768).abs() <= 2,
-            "Expected ~768 frames, got {}",
-            second_chunk
-        );
+        assert_eq!(second_chunk, 768);
     }
 }
 
