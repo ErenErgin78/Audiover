@@ -102,7 +102,7 @@ fn main() {
         "Audiover_Mic",
         "Audiover_Virtual_Microphone",
     );
-    if !router.is_pipewire_available() {
+    if !AudioRouter::is_pipewire_available() {
         warn!("PipeWire/PulseAudio daemon not reachable via pactl; virtual devices unavailable.");
     }
     if !router.setup_virtual_devices() {

@@ -862,6 +862,7 @@ pub fn get_diagnostics(state: State<'_, AppContext>) -> Diagnostics {
     let devices = engine.get_devices_state();
     let hk = state.hotkey_manager.get_status();
     let pactl_available = std::process::Command::new("pactl")
+        .env("LC_ALL", "C")
         .arg("info")
         .output()
         .map(|o| o.status.success())
@@ -941,6 +942,7 @@ mod tests {
         ctx.stream_engine.set_mic_gain(1.5);
         ctx.stream_engine.set_monitor_gain(0.5);
         ctx.stream_engine.set_hear_myself(true);
+        ctx.stream_engine.set_hear_soundboard(false);
         ctx.stream_engine.set_buffer_size(512);
         persist_audio_settings(&ctx);
 
@@ -948,6 +950,7 @@ mod tests {
         assert_eq!(loaded["mic_gain"].as_f64().unwrap(), 1.5);
         assert_eq!(loaded["monitor_gain"].as_f64().unwrap(), 0.5);
         assert_eq!(loaded["hear_myself"].as_bool().unwrap(), true);
+        assert_eq!(loaded["hear_soundboard"].as_bool().unwrap(), false);
         assert_eq!(loaded["block_size"].as_u64().unwrap(), 512);
         let _ = fs::remove_file(&path);
     }

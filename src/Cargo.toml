@@ -1,6 +1,6 @@
 [package]
 name = "audiover"
-version = "1.0.3"
+version = "1.0.4"
 description = "Audiover Voice Changer and Soundboard Engine"
 authors = ["Audiover Contributors"]
 edition = "2021"

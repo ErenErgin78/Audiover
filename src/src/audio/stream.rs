@@ -1,4 +1,5 @@
 use super::dsp::VoiceDSP;
+use crate::audio::router::AudioRouter;
 use crate::soundboard::player::SoundboardPlayer;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{
@@ -103,7 +104,7 @@ pub struct AudioStreamEngine {
 
     input_stream: Mutex<Option<SafeStream>>,
     virtual_stream: Mutex<Option<VirtualOutputStream>>,
-    monitor_stream: Mutex<Option<SafeStream>>,
+    monitor_stream: Mutex<Option<MonitorOutputStream>>,
 }
 
 fn get_device_name(dev: &Device) -> String {
@@ -376,6 +377,123 @@ fn make_output_callback_u16(
                     data[i * 2 + 1] = f32_to_u16(last_sample[1]);
                 }
             }
+        }
+    }
+}
+
+fn make_shared_output_callback_f32(
+    cons_holder: Arc<parking_lot::Mutex<Option<rtrb::Consumer<[f32; 2]>>>>,
+    capacity: usize,
+    block_size: usize,
+) -> impl FnMut(&mut [f32], &cpal::OutputCallbackInfo) + Send + 'static {
+    let mut last_sample = [0.0f32, 0.0];
+    let max_headroom = capacity.saturating_sub(block_size * 2);
+
+    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+        let frames = data.len() / 2;
+        if let Some(ref mut guard) = cons_holder.try_lock() {
+            if let Some(ref mut cons) = **guard {
+                if cons.slots() > max_headroom {
+                    let _ = cons.pop();
+                }
+                for i in 0..frames {
+                    match cons.pop() {
+                        Ok(f) => {
+                            last_sample = f;
+                            data[i * 2] = f[0];
+                            data[i * 2 + 1] = f[1];
+                        }
+                        Err(_) => {
+                            last_sample[0] *= 0.85;
+                            last_sample[1] *= 0.85;
+                            data[i * 2] = last_sample[0];
+                            data[i * 2 + 1] = last_sample[1];
+                        }
+                    }
+                }
+                return;
+            }
+        }
+        for s in data.iter_mut() {
+            *s = 0.0;
+        }
+    }
+}
+
+fn make_shared_output_callback_i16(
+    cons_holder: Arc<parking_lot::Mutex<Option<rtrb::Consumer<[f32; 2]>>>>,
+    capacity: usize,
+    block_size: usize,
+) -> impl FnMut(&mut [i16], &cpal::OutputCallbackInfo) + Send + 'static {
+    let mut last_sample = [0.0f32, 0.0];
+    let max_headroom = capacity.saturating_sub(block_size * 2);
+
+    move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
+        let frames = data.len() / 2;
+        if let Some(ref mut guard) = cons_holder.try_lock() {
+            if let Some(ref mut cons) = **guard {
+                if cons.slots() > max_headroom {
+                    let _ = cons.pop();
+                }
+                for i in 0..frames {
+                    match cons.pop() {
+                        Ok(f) => {
+                            last_sample = f;
+                            data[i * 2] = f32_to_i16(f[0]);
+                            data[i * 2 + 1] = f32_to_i16(f[1]);
+                        }
+                        Err(_) => {
+                            last_sample[0] *= 0.85;
+                            last_sample[1] *= 0.85;
+                            data[i * 2] = f32_to_i16(last_sample[0]);
+                            data[i * 2 + 1] = f32_to_i16(last_sample[1]);
+                        }
+                    }
+                }
+                return;
+            }
+        }
+        for s in data.iter_mut() {
+            *s = 0;
+        }
+    }
+}
+
+fn make_shared_output_callback_u16(
+    cons_holder: Arc<parking_lot::Mutex<Option<rtrb::Consumer<[f32; 2]>>>>,
+    capacity: usize,
+    block_size: usize,
+) -> impl FnMut(&mut [u16], &cpal::OutputCallbackInfo) + Send + 'static {
+    let mut last_sample = [0.0f32, 0.0];
+    let max_headroom = capacity.saturating_sub(block_size * 2);
+
+    move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
+        let frames = data.len() / 2;
+        if let Some(ref mut guard) = cons_holder.try_lock() {
+            if let Some(ref mut cons) = **guard {
+                if cons.slots() > max_headroom {
+                    let _ = cons.pop();
+                }
+                for i in 0..frames {
+                    match cons.pop() {
+                        Ok(f) => {
+                            last_sample = f;
+                            data[i * 2] = f32_to_u16(f[0]);
+                            data[i * 2 + 1] = f32_to_u16(f[1]);
+                        }
+                        Err(_) => {
+                            last_sample[0] *= 0.85;
+                            last_sample[1] *= 0.85;
+                            data[i * 2] = f32_to_u16(last_sample[0]);
+                            data[i * 2 + 1] = f32_to_u16(last_sample[1]);
+                        }
+                    }
+                }
+                return;
+            }
+        }
+        for s in data.iter_mut() {
+            *s = 32768;
         }
     }
 }
@@ -717,6 +835,18 @@ impl AudioStreamEngine {
         if let Some(def) = host.default_output_device() {
             let name = get_device_name(&def);
             if !is_unusable_or_virtual_device(&def) {
+                // Ensure PipeWire's default sink is not hijacked by Audiover_Sink
+                if let Some(cur_sink) = AudioRouter::get_default_sink() {
+                    if is_virtual_device_name(&cur_sink) {
+                        warn!(
+                            "Default sink is currently pointing to virtual sink '{}'. Restoring physical sink...",
+                            cur_sink
+                        );
+                        if let Some(phys) = AudioRouter::get_physical_default_sink() {
+                            let _ = AudioRouter::set_default_sink(&phys);
+                        }
+                    }
+                }
                 info!("Using system default output device: {}", name);
                 return Some(def);
             }
@@ -891,10 +1021,14 @@ impl AudioStreamEngine {
             return None;
         }
         let buf = match best.buffer_size() {
-            SupportedBufferSize::Range { min, max } if block >= *min && block <= *max => {
-                BufferSize::Fixed(block)
+            SupportedBufferSize::Range { min, max } => {
+                if block >= *min && block <= *max {
+                    BufferSize::Fixed(block)
+                } else {
+                    BufferSize::Default
+                }
             }
-            _ => BufferSize::Default,
+            SupportedBufferSize::Unknown => BufferSize::Default,
         };
         let format = best.sample_format();
         let in_range =
@@ -1148,73 +1282,75 @@ impl AudioStreamEngine {
         .map_err(|e| format!("Failed to build input stream: {}", e))?;
 
         // 5. Virtual sink output stream (stereo):
-        // Prefer CPAL if a supported virtual sink device is exposed by the host audio backend;
-        // otherwise stream directly into Audiover_Sink via pacat (PulseAudio / PipeWire).
+        // On PipeWire/PulseAudio systems, stream directly into Audiover_Sink via pacat to ensure
+        // explicit sink binding and prevent ALSA application-routing conflicts.
         let mut virtual_stream_opt: Option<VirtualOutputStream> = None;
-        if let Some(v_dev) = virt_sink_dev {
-            if let Some((v_config, v_format)) = virt_config_opt {
-                let virt_err = |err| error!("CPAL Virtual Output Stream error: {}", err);
-                let build_res: Result<Stream, String> = match v_format {
-                    SampleFormat::F32 => v_dev
-                        .build_output_stream(
-                            v_config,
-                            make_output_callback_f32(virt_cons, virt_capacity, block_size),
-                            virt_err,
-                            None,
-                        )
-                        .map_err(|e| e.to_string()),
-                    SampleFormat::I16 => v_dev
-                        .build_output_stream(
-                            v_config,
-                            make_output_callback_i16(virt_cons, virt_capacity, block_size),
-                            virt_err,
-                            None,
-                        )
-                        .map_err(|e| e.to_string()),
-                    SampleFormat::U16 => v_dev
-                        .build_output_stream(
-                            v_config,
-                            make_output_callback_u16(virt_cons, virt_capacity, block_size),
-                            virt_err,
-                            None,
-                        )
-                        .map_err(|e| e.to_string()),
-                    other => Err(format!("Unsupported virtual-sink format ({})", other)),
-                };
-                match build_res {
-                    Ok(s) => {
-                        if let Err(e) = s.play() {
-                            warn!("Could not play virtual sink stream: {}", e);
-                        } else {
-                            info!(
-                                "Started Virtual Sink Output Stream on {}",
-                                get_device_name(&v_dev)
-                            );
-                            virtual_stream_opt = Some(VirtualOutputStream::Cpal(SafeStream(s)));
-                        }
-                    }
-                    Err(e) => warn!("Could not open virtual sink stream: {}", e),
-                }
-            } else {
-                warn!("Virtual sink device has no supported stereo output config.");
-                match PacatStream::spawn("Audiover_Sink", in_rate, block_size, virt_cons) {
+        let virt_cons_shared = Arc::new(parking_lot::Mutex::new(Some(virt_cons)));
+
+        if AudioRouter::is_pipewire_available() {
+            if let Some(consumer) = virt_cons_shared.lock().take() {
+                info!("Routing virtual sink output directly via pacat to Audiover_Sink...");
+                match PacatStream::spawn("Audiover_Sink", in_rate, block_size, consumer, "Audiover_Virtual_Mic") {
                     Ok(pacat) => {
-                        info!("Started Pacat Virtual Sink Stream on Audiover_Sink");
+                        info!("Started Virtual Sink Output Stream via pacat on Audiover_Sink");
                         virtual_stream_opt = Some(VirtualOutputStream::Pacat(pacat));
                     }
-                    Err(e) => {
-                        warn!("Could not open virtual sink stream via pacat: {}", e);
+                    Err((e, consumer_back)) => {
+                        warn!("Could not open virtual sink stream via pacat ({}). Trying CPAL...", e);
+                        *virt_cons_shared.lock() = Some(consumer_back);
                     }
                 }
             }
-        } else {
-            match PacatStream::spawn("Audiover_Sink", in_rate, block_size, virt_cons) {
-                Ok(pacat) => {
-                    info!("Started Pacat Virtual Sink Stream on Audiover_Sink");
-                    virtual_stream_opt = Some(VirtualOutputStream::Pacat(pacat));
-                }
-                Err(e) => {
-                    warn!("Could not open virtual sink stream via pacat: {}", e);
+        }
+
+        // Pure ALSA fallback for virtual sink output if pacat was not available or failed:
+        if virtual_stream_opt.is_none() {
+            if let Some(consumer) = virt_cons_shared.lock().take() {
+                if let Some(v_dev) = virt_sink_dev {
+                    if let Some((v_config, v_format)) = virt_config_opt {
+                        let virt_err = |err| error!("CPAL Virtual Output Stream error: {}", err);
+                        let build_res: Result<Stream, String> = match v_format {
+                            SampleFormat::F32 => v_dev
+                                .build_output_stream(
+                                    v_config,
+                                    make_output_callback_f32(consumer, virt_capacity, block_size),
+                                    virt_err,
+                                    None,
+                                )
+                                .map_err(|e| e.to_string()),
+                            SampleFormat::I16 => v_dev
+                                .build_output_stream(
+                                    v_config,
+                                    make_output_callback_i16(consumer, virt_capacity, block_size),
+                                    virt_err,
+                                    None,
+                                )
+                                .map_err(|e| e.to_string()),
+                            SampleFormat::U16 => v_dev
+                                .build_output_stream(
+                                    v_config,
+                                    make_output_callback_u16(consumer, virt_capacity, block_size),
+                                    virt_err,
+                                    None,
+                                )
+                                .map_err(|e| e.to_string()),
+                            other => Err(format!("Unsupported virtual-sink format ({})", other)),
+                        };
+                        match build_res {
+                            Ok(s) => {
+                                if let Err(e) = s.play() {
+                                    warn!("Could not play virtual sink stream: {}", e);
+                                } else {
+                                    info!(
+                                        "Started Virtual Sink Output Stream on {}",
+                                        get_device_name(&v_dev)
+                                    );
+                                    virtual_stream_opt = Some(VirtualOutputStream::Cpal(SafeStream(s)));
+                                }
+                            }
+                            Err(e) => warn!("Could not open virtual sink stream: {}", e),
+                        }
+                    }
                 }
             }
         }
@@ -1222,56 +1358,111 @@ impl AudioStreamEngine {
         // 6. Monitor headphone output stream (stereo):
         // If monitor hardware rate differs from engine clock, streaming resampler
         // in InputProcessor bridges the rate smoothly without stutter or dropouts.
-        let mut monitor_stream_opt = None;
-        if let Some(m_dev) = monitor_dev {
-            if let Some((m_config, m_format)) = monitor_config_opt {
-                let mon_err = |err| error!("CPAL Monitor Output Stream error: {}", err);
-                let build_res: Result<Stream, String> = match m_format {
-                    SampleFormat::F32 => m_dev
-                        .build_output_stream(
-                            m_config,
-                            make_output_callback_f32(mon_cons, mon_capacity, block_size),
-                            mon_err,
-                            None,
-                        )
-                        .map_err(|e| e.to_string()),
-                    SampleFormat::I16 => m_dev
-                        .build_output_stream(
-                            m_config,
-                            make_output_callback_i16(mon_cons, mon_capacity, block_size),
-                            mon_err,
-                            None,
-                        )
-                        .map_err(|e| e.to_string()),
-                    SampleFormat::U16 => m_dev
-                        .build_output_stream(
-                            m_config,
-                            make_output_callback_u16(mon_cons, mon_capacity, block_size),
-                            mon_err,
-                            None,
-                        )
-                        .map_err(|e| e.to_string()),
-                    other => Err(format!("Unsupported monitor format ({})", other)),
-                };
-                match build_res {
-                    Ok(s) => {
-                        if let Err(e) = s.play() {
-                            warn!("Could not play monitor stream: {}", e);
-                        } else {
-                            info!(
-                                "Started Monitor Output Stream on {}",
-                                get_device_name(&m_dev)
-                            );
-                            monitor_stream_opt = Some(SafeStream(s));
+        let mut monitor_stream_opt: Option<MonitorOutputStream> = None;
+        if saved_mon.as_deref() == Some(MONITOR_DISABLED_SENTINEL) {
+            info!("Monitor output disabled.");
+        } else {
+            let mon_cons_shared = Arc::new(parking_lot::Mutex::new(Some(mon_cons)));
+
+            // 1. If PipeWire / PulseAudio is available, route monitor stream directly via pacat
+            // to the physical hardware sink. This avoids CPAL ALSA streams being intercepted
+            // and redirected to Audiover_Sink by WirePlumber ALSA routing rules.
+            if AudioRouter::is_pipewire_available() {
+                let target_sink = AudioRouter::resolve_sink_name(saved_mon.as_deref());
+                let sink_ref = target_sink.as_deref().unwrap_or("@DEFAULT_SINK@");
+                if let Some(consumer) = mon_cons_shared.lock().take() {
+                    info!(
+                        "Routing monitor output directly via pacat to physical sink '{}'...",
+                        sink_ref
+                    );
+                    match PacatStream::spawn(sink_ref, in_rate, block_size, consumer, "Audiover_Monitor") {
+                        Ok(pacat) => {
+                            info!("Started Monitor Output Stream via pacat on physical sink '{}'", sink_ref);
+                            monitor_stream_opt = Some(MonitorOutputStream::Pacat(pacat));
+                        }
+                        Err((e, consumer_back)) => {
+                            warn!("Pacat monitor stream failed ({}). Falling back to CPAL...", e);
+                            *mon_cons_shared.lock() = Some(consumer_back);
                         }
                     }
-                    Err(e) => warn!("Could not open monitor device: {}", e),
                 }
-            } else {
-                warn!("Monitor device has no supported stereo output config.");
             }
-        } else {
-            info!("Monitor output disabled.");
+
+            // 2. Pure ALSA fallback: only attempted if pacat was not used or failed
+            if monitor_stream_opt.is_none() {
+                if let Some(m_dev) = monitor_dev {
+                    if let Some((mut m_config, m_format)) = monitor_config_opt {
+                        let mon_err = |err| error!("CPAL Monitor Output Stream error: {}", err);
+
+                        let try_build_cpal = |dev: &Device, cfg: StreamConfig| -> Result<Stream, String> {
+                            match m_format {
+                                SampleFormat::F32 => dev.build_output_stream(
+                                    cfg,
+                                    make_shared_output_callback_f32(mon_cons_shared.clone(), mon_capacity, block_size),
+                                    mon_err,
+                                    None,
+                                ),
+                                SampleFormat::I16 => dev.build_output_stream(
+                                    cfg,
+                                    make_shared_output_callback_i16(mon_cons_shared.clone(), mon_capacity, block_size),
+                                    mon_err,
+                                    None,
+                                ),
+                                SampleFormat::U16 => dev.build_output_stream(
+                                    cfg,
+                                    make_shared_output_callback_u16(mon_cons_shared.clone(), mon_capacity, block_size),
+                                    mon_err,
+                                    None,
+                                ),
+                                other => return Err(format!("Unsupported monitor format ({})", other)),
+                            }.map_err(|e| e.to_string())
+                        };
+
+                        // Attempt 1: Negotiated configuration (BufferSize::Fixed(block_size))
+                        let mut build_res = try_build_cpal(&m_dev, m_config.clone());
+
+                        // Attempt 2: Fallback to BufferSize::Default if fixed buffer size was rejected
+                        if build_res.is_err() && m_config.buffer_size != BufferSize::Default {
+                            warn!(
+                                "CPAL monitor stream build with fixed buffer size failed ({:?}); retrying with BufferSize::Default...",
+                                build_res.as_ref().err()
+                            );
+                            m_config.buffer_size = BufferSize::Default;
+                            build_res = try_build_cpal(&m_dev, m_config.clone());
+                        }
+
+                        // Attempt 3: Fallback to standard period size (1024) if driver requires it
+                        if build_res.is_err() && m_config.buffer_size != BufferSize::Fixed(1024) {
+                            warn!(
+                                "CPAL monitor stream build failed ({:?}); retrying with BufferSize::Fixed(1024)...",
+                                build_res.as_ref().err()
+                            );
+                            let mut safe_cfg = m_config.clone();
+                            safe_cfg.buffer_size = BufferSize::Fixed(1024);
+                            build_res = try_build_cpal(&m_dev, safe_cfg);
+                        }
+
+                        match build_res {
+                            Ok(s) => {
+                                if let Err(e) = s.play() {
+                                    warn!("Could not play monitor stream: {}", e);
+                                } else {
+                                    info!(
+                                        "Started Monitor Output Stream via CPAL on {}",
+                                        get_device_name(&m_dev)
+                                    );
+                                    monitor_stream_opt = Some(MonitorOutputStream::Cpal(SafeStream(s)));
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Could not open monitor device via CPAL ({}).", e);
+                            }
+                        }
+                    } else {
+                        warn!("Monitor device has no supported stereo output config via CPAL.");
+                    }
+                }
+            }
         }
 
         input_stream.play().map_err(|e| e.to_string())?;
@@ -1308,17 +1499,39 @@ impl AudioStreamEngine {
         self.hear_myself.store(enabled, Ordering::SeqCst);
         // If sidetone was enabled but the monitor stream is missing
         // (e.g. the device was busy at start), retry opening it.
-        if enabled && self.is_running.load(Ordering::SeqCst) && self.monitor_stream.lock().is_none()
-        {
-            let saved = self.selected_monitor_name.lock().clone();
-            if saved.as_deref() != Some(MONITOR_DISABLED_SENTINEL) {
-                let _ = self.start();
-            }
+        if enabled {
+            self.ensure_monitor_stream();
         }
     }
 
     pub fn set_hear_soundboard(&self, enabled: bool) {
         self.hear_soundboard.store(enabled, Ordering::SeqCst);
+        // Same recovery as sidetone: the flag alone cannot produce sound
+        // while the monitor stream was never opened, so enabling
+        // soundboard monitoring must also bring the stream back.
+        if enabled {
+            self.ensure_monitor_stream();
+        }
+    }
+
+    /// Re-opens the monitor (headphone) output when monitoring was requested
+    /// but no monitor stream exists — e.g. the device was busy at start or
+    /// opening it failed. Without this, enabling `hear_myself` or
+    /// `hear_soundboard` only flips a flag while the headphones stay silent
+    /// (the virtual-mic path keeps working since it has a pacat fallback).
+    /// Runs on control threads only (`start()` rebuilds every stream); the
+    /// audio callbacks keep reading the flags lock-free via atomics.
+    fn ensure_monitor_stream(&self) {
+        if self.monitor_stream.lock().is_some() {
+            return;
+        }
+        if !self.is_running.load(Ordering::SeqCst) {
+            return;
+        }
+        if self.selected_monitor_name.lock().as_deref() == Some(MONITOR_DISABLED_SENTINEL) {
+            return;
+        }
+        let _ = self.start();
     }
 
     pub fn set_mic_gain(&self, gain: f32) {
@@ -1485,8 +1698,10 @@ impl PacatStream {
         sample_rate: u32,
         block_size: usize,
         mut consumer: rtrb::Consumer<[f32; 2]>,
-    ) -> Result<Self, String> {
-        let mut child = std::process::Command::new("pacat")
+        stream_name: &str,
+    ) -> Result<Self, (String, rtrb::Consumer<[f32; 2]>)> {
+        let mut child = match std::process::Command::new("pacat")
+            .env("LC_ALL", "C")
             .args([
                 "--playback",
                 "-d",
@@ -1496,24 +1711,31 @@ impl PacatStream {
                 "--channels=2",
                 "--latency-msec=25",
                 "--raw",
-                "--stream-name=Audiover_Virtual_Mic",
+                &format!("--stream-name={}", stream_name),
             ])
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .map_err(|e| format!("Failed to spawn pacat: {}", e))?;
+        {
+            Ok(c) => c,
+            Err(e) => return Err((format!("Failed to spawn pacat: {}", e), consumer)),
+        };
 
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "Failed to capture pacat stdin".to_string())?;
+        let mut stdin = match child.stdin.take() {
+            Some(s) => s,
+            None => {
+                let _ = child.kill();
+                return Err(("Failed to capture pacat stdin".to_string(), consumer));
+            }
+        };
 
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = running.clone();
 
-        let worker = std::thread::Builder::new()
-            .name("audiover-virt-pacat".into())
+        let thread_name = format!("audiover-{}", stream_name.to_lowercase().replace('_', "-"));
+        let worker = match std::thread::Builder::new()
+            .name(thread_name)
             .spawn(move || {
                 use std::io::Write;
                 let chunk_limit = block_size.max(256);
@@ -1561,7 +1783,14 @@ impl PacatStream {
                     }
                 }
             })
-            .map_err(|e| format!("Failed to spawn pacat worker: {}", e))?;
+        {
+            Ok(w) => w,
+            Err(e) => {
+                let _ = child.kill();
+                let (_, dummy) = RingBuffer::<[f32; 2]>::new(2);
+                return Err((format!("Failed to spawn pacat worker: {}", e), dummy));
+            }
+        };
 
         Ok(Self {
             running,
@@ -1585,6 +1814,12 @@ impl Drop for PacatStream {
 
 #[allow(dead_code)]
 pub enum VirtualOutputStream {
+    Cpal(SafeStream),
+    Pacat(PacatStream),
+}
+
+#[allow(dead_code)]
+pub enum MonitorOutputStream {
     Cpal(SafeStream),
     Pacat(PacatStream),
 }
@@ -1661,7 +1896,7 @@ mod tests {
             let _ = prod.push([0.1, 0.1]);
         }
         if AudioStreamEngine::is_virtual_sink_available() {
-            let stream = PacatStream::spawn("Audiover_Sink", 48000, 256, cons);
+            let stream = PacatStream::spawn("Audiover_Sink", 48000, 256, cons, "Audiover_Virtual_Mic");
             assert!(stream.is_ok());
             std::thread::sleep(Duration::from_millis(50));
             // Stream should drop cleanly without hanging
@@ -1690,6 +1925,213 @@ mod tests {
         let total_count = cons.slots();
         let second_chunk = total_count - first_count;
         assert_eq!(second_chunk, 768);
+    }
+
+    /// Regression test for soundboard monitoring: the soundboard block mixed
+    /// once per input block must reach the monitor (headphone) ring when
+    /// `hear_soundboard` is set, stay out of it when cleared, and always
+    /// reach the virtual-mic ring. Uses a synthetic WAV so no hardware is
+    /// needed; drives `InputProcessor` directly like the input callbacks do.
+    fn write_test_wav(path: &std::path::Path, sample_rate: u32, secs: f32) {
+        let n = (sample_rate as f32 * secs) as usize;
+        let data_bytes = (n * 2) as u32;
+        let mut buf = Vec::with_capacity(44 + data_bytes as usize);
+        buf.extend_from_slice(b"RIFF");
+        buf.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        buf.extend_from_slice(b"WAVEfmt ");
+        buf.extend_from_slice(&16u32.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&1u16.to_le_bytes());
+        buf.extend_from_slice(&sample_rate.to_le_bytes());
+        buf.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+        buf.extend_from_slice(&2u16.to_le_bytes());
+        buf.extend_from_slice(&16u16.to_le_bytes());
+        buf.extend_from_slice(b"data");
+        buf.extend_from_slice(&data_bytes.to_le_bytes());
+        for i in 0..n {
+            let t = i as f32 / sample_rate as f32;
+            let s = (2.0 * std::f32::consts::PI * 440.0 * t).sin() * 0.5;
+            buf.extend_from_slice(&(f32_to_i16(s)).to_le_bytes());
+        }
+        std::fs::write(path, buf).unwrap();
+    }
+
+    fn drain_energy(cons: &mut rtrb::Consumer<[f32; 2]>) -> f32 {
+        let mut e = 0.0f32;
+        while let Ok(f) = cons.pop() {
+            e += f[0] * f[0] + f[1] * f[1];
+        }
+        e
+    }
+
+    #[test]
+    fn soundboard_monitor_routing_respects_hear_flag() {
+        use crate::audio::dsp::VoiceDSP;
+        use crate::soundboard::player::SoundboardPlayer;
+
+        let sr = 48000u32;
+        let block = 256usize;
+        let dsp = Arc::new(Mutex::new(VoiceDSP::new(sr as usize, block)));
+        let player = Arc::new(SoundboardPlayer::new(sr));
+        let path = std::env::temp_dir().join(format!(
+            "audiover-repro-{}-tone.wav",
+            std::process::id()
+        ));
+        write_test_wav(&path, sr, 2.0);
+        assert!(player
+            .load_sound("repro-tone", path.to_str().unwrap(), Some("tone"), 1.0, false)
+            .is_some());
+        player.play("repro-tone");
+
+        let hear_myself = Arc::new(AtomicBool::new(false));
+        let hear_soundboard = Arc::new(AtomicBool::new(true));
+        let (virt_prod, mut virt_cons) = RingBuffer::<[f32; 2]>::new(8192);
+        let (mon_prod, mut mon_cons) = RingBuffer::<[f32; 2]>::new(8192);
+
+        let mut proc = InputProcessor {
+            dsp: dsp.clone(),
+            soundboard: player.clone(),
+            mic_gain_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            monitor_gain_bits: Arc::new(AtomicU32::new(1.0f32.to_bits())),
+            is_muted: Arc::new(AtomicBool::new(false)),
+            hear_myself: hear_myself.clone(),
+            hear_soundboard: hear_soundboard.clone(),
+            in_peak_bits: Arc::new(AtomicU32::new(0)),
+            in_rms_bits: Arc::new(AtomicU32::new(0)),
+            out_peak_bits: Arc::new(AtomicU32::new(0)),
+            out_rms_bits: Arc::new(AtomicU32::new(0)),
+            virt_prod,
+            mon_prod,
+            virt_resampler: None,
+            mon_resampler: None,
+            mono: vec![0.0; block],
+            dsp_out: vec![0.0; block],
+            voice_stereo: vec![[0.0, 0.0]; block],
+            sb_block: vec![[0.0, 0.0]; block],
+            mon_scratch: vec![[0.0, 0.0]; block],
+        };
+
+        let silent = vec![0.0f32; block];
+        proc.handle_mono_block(&silent);
+        let virt_e = drain_energy(&mut virt_cons);
+        let mon_e = drain_energy(&mut mon_cons);
+        assert!(virt_e > 0.01, "virt should carry soundboard");
+        assert!(mon_e > 0.01, "monitor should carry soundboard when enabled");
+
+        hear_soundboard.store(false, Ordering::SeqCst);
+        player.play("repro-tone");
+        proc.handle_mono_block(&silent);
+        let virt_e2 = drain_energy(&mut virt_cons);
+        let mon_e2 = drain_energy(&mut mon_cons);
+        assert!(virt_e2 > 0.01, "virt should still carry soundboard");
+        assert!(mon_e2 < 1e-6, "monitor must be silent when disabled");
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Enabling soundboard monitoring must recover a missing monitor stream
+    /// (e.g. the device was busy when the engine started). Without the
+    /// recovery in `set_hear_soundboard`, the toggle only flips a flag while
+    /// headphones stay silent — yet the virtual-mic path keeps working.
+    /// Falls back to flag-only assertions on machines without audio hardware.
+    #[test]
+    fn hear_soundboard_recovers_missing_monitor_stream() {
+        use crate::audio::dsp::VoiceDSP;
+        use crate::soundboard::player::SoundboardPlayer;
+
+        let dsp = Arc::new(Mutex::new(VoiceDSP::new(48000, 256)));
+        let player = Arc::new(SoundboardPlayer::new(48000));
+        let engine = AudioStreamEngine::new(48000, 256, dsp, player);
+        if engine.start().is_err() {
+            // No audio hardware: recovery cannot run, but the flag must stick.
+            engine.set_hear_soundboard(true);
+            assert!(engine.hear_soundboard.load(Ordering::SeqCst));
+            return;
+        }
+        assert!(engine.monitor_stream.lock().is_some());
+
+        // Simulate the failure mode: monitor stream lost after start.
+        *engine.monitor_stream.lock() = None;
+        engine.set_hear_soundboard(true);
+        assert!(
+            engine.monitor_stream.lock().is_some(),
+            "enabling soundboard monitoring must re-open a missing monitor stream"
+        );
+        engine.stop();
+    }
+
+    /// Guard rails for `ensure_monitor_stream`: enabling monitoring must NOT
+    /// restart the engine while the monitor output is explicitly disabled
+    /// (`"none"`) or while the engine is stopped. Fully hermetic.
+    #[test]
+    fn hear_toggles_do_not_restart_when_monitor_unavailable() {
+        use crate::audio::dsp::VoiceDSP;
+        use crate::soundboard::player::SoundboardPlayer;
+
+        let dsp = Arc::new(Mutex::new(VoiceDSP::new(48000, 256)));
+        let player = Arc::new(SoundboardPlayer::new(48000));
+        let engine = AudioStreamEngine::new(48000, 256, dsp, player);
+
+        // Case 1: engine stopped — setters store the flag, nothing else happens.
+        engine.set_hear_soundboard(true);
+        engine.set_hear_myself(true);
+        assert!(engine.hear_soundboard.load(Ordering::SeqCst));
+        assert!(engine.hear_myself.load(Ordering::SeqCst));
+        assert!(!engine.is_running.load(Ordering::SeqCst));
+        assert!(engine.input_stream.lock().is_none());
+        assert!(engine.monitor_stream.lock().is_none());
+
+        // Case 2: engine (nominally) running but monitor output disabled —
+        // a restart must not be attempted: no streams appear and the running
+        // state is left untouched.
+        *engine.selected_monitor_name.lock() = Some(MONITOR_DISABLED_SENTINEL.to_string());
+        engine.is_running.store(true, Ordering::SeqCst);
+        engine.set_hear_soundboard(true);
+        engine.set_hear_myself(true);
+        assert!(engine.input_stream.lock().is_none());
+        assert!(engine.monitor_stream.lock().is_none());
+        assert!(
+            engine.is_running.load(Ordering::SeqCst),
+            "disabled monitor output must not trigger an engine restart"
+        );
+        engine.is_running.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn test_physical_default_sink_resolution() {
+        if let Some(sink) = AudioRouter::get_physical_default_sink() {
+            assert!(
+                !is_virtual_device_name(&sink),
+                "Physical default sink '{}' should not be a virtual device",
+                sink
+            );
+        }
+        if let Some(src) = AudioRouter::get_physical_default_source() {
+            assert!(
+                !is_virtual_device_name(&src),
+                "Physical default source '{}' should not be a virtual device",
+                src
+            );
+            assert!(
+                !src.ends_with(".monitor"),
+                "Physical default source '{}' should not be a monitor source",
+                src
+            );
+        }
+    }
+
+    #[test]
+    fn test_pacat_monitor_stream_lifecycle() {
+        let (mut prod, cons) = RingBuffer::<[f32; 2]>::new(1024);
+        for _ in 0..512 {
+            let _ = prod.push([0.05, 0.05]);
+        }
+        if let Some(target_sink) = AudioRouter::get_physical_default_sink() {
+            let stream = PacatStream::spawn(&target_sink, 48000, 256, cons, "Audiover_Monitor_Test");
+            if let Ok(s) = stream {
+                std::thread::sleep(Duration::from_millis(50));
+                drop(s);
+            }
+        }
     }
 }
 
