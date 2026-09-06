@@ -2,7 +2,7 @@
 # Audiover - Voice & Soundboard Engine Makefile
 # ==============================================================================
 
-.PHONY: help setup setup-deps dev build build-rpm build-deb build-appimage install-rpm install-deb install-appimage clean test lint bump bump-patch bump-minor bump-major set-version
+.PHONY: help setup setup-deps dev build build-rpm build-deb build-appimage install-rpm install-deb install-appimage clean test lint bump bump-patch bump-minor bump-major set-version release release-patch
 
 # Default target
 .DEFAULT_GOAL := help
@@ -122,6 +122,12 @@ bump-major: ## Bump major version (1.0.1 -> 2.0.0) across tauri.conf.json, Cargo
 set-version: ## Set exact version. Usage: make set-version VERSION=1.2.3
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make set-version VERSION=X.Y.Z"; exit 1; fi
 	@bash scripts/bump_version.sh --set $(VERSION)
+
+release-patch: ## Bump patch version, commit, tag vX.Y.Z and push tag to origin
+	@bash scripts/release_patch.sh patch
+
+release: ## Bump version, commit, tag and push to origin. Usage: make release TYPE=patch
+	@bash scripts/release_patch.sh $(or $(TYPE),patch)
 
 lint: ## Run linter and formatting checks
 	@echo "[+] Checking Rust formatting and clippy..."
