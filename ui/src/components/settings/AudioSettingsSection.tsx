@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, type AudioDevicesState } from "../../hooks/useApi";
 import { useI18n } from "../../hooks/useI18n";
 import ToggleSwitch from "../ToggleSwitch";
+import Select from "../Select";
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -92,73 +93,50 @@ export default function AudioSettingsSection() {
     );
   }
 
-  const handleInputChange = async (idxStr: string) => {
-    const idx = Number(idxStr);
+  const handleInputChange = async (val: number | string) => {
+    const idx = Number(val);
     await api.setInputDevice(idx);
     setDevState((d) => d ? { ...d, current_input: idx } : d);
   };
 
-  const handleMonitorChange = async (idxStr: string) => {
-    const idx = idxStr === "null" ? null : Number(idxStr);
+  const handleMonitorChange = async (val: number | string) => {
+    const idx = val === "null" ? null : Number(val);
     await api.setMonitorDevice(idx);
     setDevState((d) => d ? { ...d, current_monitor: idx } : d);
   };
 
-  const handleBufferChange = async (sizeStr: string) => {
-    const size = Number(sizeStr);
+  const handleBufferChange = async (val: number | string) => {
+    const size = Number(val);
     await api.setBufferSize(size);
     setDevState((d) => d ? { ...d, block_size: size } : d);
   };
-
-  const selectStyle = {
-    background: "var(--bg-surface)",
-    border: "1px solid var(--border)",
-    color: "var(--text)",
-    colorScheme: "dark",
-    borderRadius: 8,
-    padding: "6px 10px",
-    fontSize: 12,
-    flex: 1,
-    minWidth: 0,
-    maxWidth: "100%",
-    outline: "none",
-  } as React.CSSProperties;
-
-  const optionStyle = {
-    backgroundColor: "#161824",
-    color: "#E0E6ED",
-  } as React.CSSProperties;
 
   return (
     <>
       {/* Device Selection */}
       <Card title={t.audio.hardwareCard}>
         <Row label={t.audio.inputLabel}>
-          <select
+          <Select
             value={devState.current_input ?? ""}
-            onChange={(e) => handleInputChange(e.target.value)}
-            style={selectStyle}
-          >
-            {devState.inputs.map((d) => (
-              <option key={d.index} value={d.index} style={optionStyle}>
-                [{d.index}] {d.name}{d.is_default ? " (Default)" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={handleInputChange}
+            options={devState.inputs.map((d) => ({
+              value: d.index,
+              label: `[${d.index}] ${d.name}${d.is_default ? " (Default)" : ""}`,
+            }))}
+          />
         </Row>
         <Row label={t.audio.monitorLabel}>
-          <select
+          <Select
             value={devState.current_monitor ?? "null"}
-            onChange={(e) => handleMonitorChange(e.target.value)}
-            style={selectStyle}
-          >
-            <option value="null" style={optionStyle}>{t.audio.noneDisabled}</option>
-            {devState.outputs.map((d) => (
-              <option key={d.index} value={d.index} style={optionStyle}>
-                [{d.index}] {d.name}{d.is_default ? " (Default)" : ""}
-              </option>
-            ))}
-          </select>
+            onChange={handleMonitorChange}
+            options={[
+              { value: "null", label: t.audio.noneDisabled },
+              ...devState.outputs.map((d) => ({
+                value: d.index,
+                label: `[${d.index}] ${d.name}${d.is_default ? " (Default)" : ""}`,
+              })),
+            ]}
+          />
         </Row>
         <button
           onClick={load}
@@ -193,15 +171,11 @@ export default function AudioSettingsSection() {
       {/* Latency */}
       <Card title={t.audio.latencyCard}>
         <Row label={t.audio.bufferSize}>
-          <select
+          <Select
             value={devState.block_size}
-            onChange={(e) => handleBufferChange(e.target.value)}
-            style={selectStyle}
-          >
-            {bufferOptions.map((o) => (
-              <option key={o.value} value={o.value} style={optionStyle}>{o.label}</option>
-            ))}
-          </select>
+            onChange={handleBufferChange}
+            options={bufferOptions}
+          />
         </Row>
       </Card>
 

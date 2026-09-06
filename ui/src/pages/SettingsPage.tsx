@@ -18,7 +18,7 @@ export default function SettingsPage() {
   const { t, language, setLanguage, languages } = useI18n();
 
   return (
-    <div className="flex flex-col gap-5 p-6 overflow-y-auto w-full max-w-4xl">
+    <div className="flex flex-col gap-5 p-6 w-full max-w-4xl">
       <div>
         <h1 style={{ color: "var(--accent)", fontWeight: 900, fontSize: 20, letterSpacing: 1 }}>
           {t.settings.title}

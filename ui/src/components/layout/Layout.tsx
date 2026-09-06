@@ -13,7 +13,7 @@ export default function Layout({ children }: LayoutProps) {
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <main
-          className="flex-1 overflow-y-auto"
+          className="flex-1 overflow-y-auto overflow-x-hidden"
           style={{ background: "var(--bg-base)" }}
         >
           {children}

@@ -104,6 +104,17 @@ export default function App() {
   // In-window hotkey listener (Tier 3 fallback + window-focus support)
   useInWindowHotkeys();
 
+  // WebKitGTK viewport shift safeguard
+  useEffect(() => {
+    const handleScroll = () => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) {
+        window.scrollTo(0, 0);
+      }
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   // Bootstrap: fetch full state on startup (with error surfacing instead
   // of an infinite spinner when no backend is reachable).
   useEffect(() => {
