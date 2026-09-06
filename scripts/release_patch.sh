@@ -2,7 +2,7 @@
 # Audiover Release & Tag Script
 #
 # 1. bump_version.sh kullanarak sürüm numarasını yükseltir (varsayılan: patch)
-# 2. Değişen sürüm dosyalarını git commit yapar
+# 2. Değişen sürüm dosyalarını git commit yapar (.gitignore kurallarına uyar)
 # 3. 'v[yeni versiyon]' git etiketini oluşturur
 # 4. 'git push origin [dal]' ve 'git push origin v[yeni versiyon]' komutlarını çalıştırır
 #
@@ -63,26 +63,33 @@ if [ ! -f "$TAURI_CONF" ]; then
     exit 1
 fi
 
+HEAD_VERSION="$(git -C "$PROJECT_ROOT" show HEAD:src/tauri.conf.json 2>/dev/null | python3 -c "import json, sys; print(json.load(sys.stdin)['version'])" 2>/dev/null || echo "")"
 CURRENT_VERSION="$(python3 -c "import json; print(json.load(open('$TAURI_CONF'))['version'])")"
 
 if [ "$DRY_RUN" -eq 1 ]; then
     echo "[*] DRY-RUN MODU AKTİF - Gerçekte hiçbir dosya değiştirilmeyecek ve push yapılmayacaktır."
-    echo "    Mevcut sürüm : $CURRENT_VERSION"
-    echo "    Artış türü   : $BUMP_TYPE"
-    IFS='.' read -r MA MI PA <<< "$CURRENT_VERSION"
-    case "$BUMP_TYPE" in
-        patch) PA=$((PA + 1)) ;;
-        minor) MI=$((MI + 1)); PA=0 ;;
-        major) MA=$((MA + 1)); MI=0; PA=0 ;;
-    esac
-    SIMULATED_VERSION="$MA.$MI.$PA"
+    echo "    Mevcut sürüm (disk) : $CURRENT_VERSION"
+    if [ -n "$HEAD_VERSION" ] && [ "$HEAD_VERSION" != "$CURRENT_VERSION" ]; then
+        echo "    HEAD sürümü         : $HEAD_VERSION"
+        echo "    [*] Sürüm dosyaları diskte zaten güncellenmiş ($HEAD_VERSION -> $CURRENT_VERSION)."
+        SIMULATED_VERSION="$CURRENT_VERSION"
+    else
+        echo "    Artış türü          : $BUMP_TYPE"
+        IFS='.' read -r MA MI PA <<< "$CURRENT_VERSION"
+        case "$BUMP_TYPE" in
+            patch) PA=$((PA + 1)) ;;
+            minor) MI=$((MI + 1)); PA=0 ;;
+            major) MA=$((MA + 1)); MI=0; PA=0 ;;
+        esac
+        SIMULATED_VERSION="$MA.$MI.$PA"
+    fi
     SIMULATED_TAG="v$SIMULATED_VERSION"
-    echo "    Yeni sürüm   : $SIMULATED_VERSION"
-    echo "    Hedef etiket : $SIMULATED_TAG"
+    echo "    Hedef sürüm         : $SIMULATED_VERSION"
+    echo "    Hedef etiket        : $SIMULATED_TAG"
     echo ""
     echo "[*] Çalıştırılacak adımlar:"
-    echo "    1. bash $BUMP_SCRIPT $BUMP_TYPE"
-    echo "    2. git add sürüm dosyaları"
+    echo "    1. Sürüm senkronizasyonu"
+    echo "    2. git add sürüm dosyaları (.gitignore yok sayılanlar hariç)"
     echo "    3. git commit -m 'chore(release): $SIMULATED_TAG'"
     echo "    4. git push origin \$(mevcut dal)"
     echo "    5. git tag $SIMULATED_TAG"
@@ -111,8 +118,13 @@ if [ -n "$MODIFIED_NON_VERSION" ] && [ "${ALLOW_DIRTY:-0}" != "1" ]; then
 fi
 
 # --- 1. Sürüm Yükseltme ---
-echo "[+] 1/4: Sürüm numarası yükseltiliyor ($BUMP_TYPE)..."
-bash "$BUMP_SCRIPT" "$BUMP_TYPE"
+if [ -n "$HEAD_VERSION" ] && [ "$HEAD_VERSION" != "$CURRENT_VERSION" ]; then
+    echo "[*] Sürüm dosyaları diskte zaten güncellenmiş ($HEAD_VERSION -> $CURRENT_VERSION)."
+    echo "[*] bump_version adımı atlanıyor, mevcut sürüm ($CURRENT_VERSION) ile devam ediliyor."
+else
+    echo "[+] 1/4: Sürüm numarası yükseltiliyor ($BUMP_TYPE)..."
+    bash "$BUMP_SCRIPT" "$BUMP_TYPE"
+fi
 
 NEW_VERSION="$(python3 -c "import json; print(json.load(open('$TAURI_CONF'))['version'])")"
 TAG="v$NEW_VERSION"
@@ -124,16 +136,28 @@ if git -C "$PROJECT_ROOT" rev-parse "$TAG" >/dev/null 2>&1; then
 fi
 
 # --- 2. Sürüm Dosyalarını Commit Yap ---
+stage_file() {
+    local f="$1"
+    if [ -f "$f" ]; then
+        # Yalnızca gitignore tarafından yok sayılmayan dosyaları ekle
+        if ! git -C "$PROJECT_ROOT" check-ignore -q "$f" 2>/dev/null; then
+            git -C "$PROJECT_ROOT" add "$f"
+        fi
+    fi
+}
+
 echo "[+] 2/4: Sürüm dosyaları Git'e kaydediliyor..."
-git -C "$PROJECT_ROOT" add "$TAURI_CONF" "$CARGO_TOML" "$PACKAGE_JSON"
-[ -f "$CARGO_LOCK" ] && git -C "$PROJECT_ROOT" add "$CARGO_LOCK"
-[ -f "$PACKAGE_LOCK" ] && git -C "$PROJECT_ROOT" add "$PACKAGE_LOCK"
+stage_file "$TAURI_CONF"
+stage_file "$CARGO_TOML"
+stage_file "$PACKAGE_JSON"
+stage_file "$PACKAGE_LOCK"
+stage_file "$CARGO_LOCK"
 
 if ! git -C "$PROJECT_ROOT" diff --cached --quiet; then
     git -C "$PROJECT_ROOT" commit -m "chore(release): $TAG"
     echo "    [✓] Commit oluşturuldu: chore(release): $TAG"
 else
-    echo "    [*] Değişiklik yok, commit adımı atlandı."
+    echo "    [*] Değişiklik yok veya zaten commit edilmiş."
 fi
 
 # Dalı uzak sunucuya güncelle
