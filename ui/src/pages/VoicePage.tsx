@@ -344,7 +344,6 @@ export default function VoicePage() {
             {t.voice.title}
           </h1>
           <p style={{ color: "var(--text-muted)", fontSize: 12, marginTop: 2 }}>
-            {t.voice.subtitle}
             {drawerOpen && (
               <span style={{ color: "var(--text)" }}>
                 {" "}· {t.voice.active}:{" "}

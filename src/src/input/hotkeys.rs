@@ -29,8 +29,8 @@ pub struct HotkeyStatus {
 /// The four fixed global actions. `(id, display label, default key)`.
 pub const DEFAULT_HOTKEYS: &[(&str, &str, &str)] = &[
     ("mute_mic", "Mute Microphone", "F9"),
-    ("bypass_dsp", "Bypass All DSP Effects", "F10"),
-    ("stop_all", "Stop All Sounds (Panic)", "F11"),
+    ("bypass_dsp", "Toggle Voice Effects", "F10"),
+    ("stop_all", "Stop All Sounds", "F11"),
     (
         "toggle_hear_myself",
         "Toggle Hear Myself (Loopback)",

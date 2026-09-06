@@ -19,7 +19,6 @@ export const en: TranslationSchema = {
   },
   voice: {
     title: "Voice Presets",
-    subtitle: "Select a voice preset — its parameters open automatically on the right",
     active: "Active",
     editing: "Editing",
     back: "Back",
@@ -46,7 +45,7 @@ export const en: TranslationSchema = {
   },
   soundboard: {
     addSound: "Add Audio File",
-    stopAll: "STOP ALL SOUNDS",
+    stopAll: "Stop All Sounds",
     searchPlaceholder: "Search sound...",
     noSounds: "No sounds added yet.",
     noSoundsSub: "Add files using the button above or drag & drop audio files here.",
@@ -105,8 +104,8 @@ export const en: TranslationSchema = {
     keyHeader: "Key",
     loading: "Loading hotkeys...",
     muteMicAction: "Mute / Unmute Microphone",
-    bypassDspAction: "Bypass All DSP Effects",
-    stopAllAction: "Stop All Sounds (Panic)",
+    bypassDspAction: "Toggle Voice Effects",
+    stopAllAction: "Stop All Sound Effects",
     toggleHearMyselfAction: "Toggle Hear Myself",
     changeHint: "Click a key to remap it",
     resetDefaults: "Reset to defaults",

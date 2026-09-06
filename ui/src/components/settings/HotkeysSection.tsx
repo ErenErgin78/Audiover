@@ -7,7 +7,7 @@ function actionIdOf(hk: { id?: string; action: string }): string {
   if (hk.id) return hk.id;
   // Back-compat with backends that only send the display label.
   if (hk.action.includes("Mute")) return "mute_mic";
-  if (hk.action.includes("Bypass")) return "bypass_dsp";
+  if (hk.action.includes("Bypass") || hk.action.includes("Toggle Voice Effects")) return "bypass_dsp";
   if (hk.action.includes("Stop")) return "stop_all";
   if (hk.action.includes("Hear")) return "toggle_hear_myself";
   return hk.action;

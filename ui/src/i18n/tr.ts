@@ -19,7 +19,6 @@ export const tr: TranslationSchema = {
   },
   voice: {
     title: "Ses Önayarları (Presets)",
-    subtitle: "Bir ses önayarı seçin — ayarları sağda otomatik açılır",
     active: "Aktif",
     editing: "Düzenleniyor",
     back: "Geri",
@@ -105,7 +104,7 @@ export const tr: TranslationSchema = {
     keyHeader: "Tuş",
     loading: "Kısayollar yükleniyor...",
     muteMicAction: "Mikrofonu Sustur / Aç",
-    bypassDspAction: "Tüm DSP Efektlerini Kapat",
+    bypassDspAction: "Ses Değiştiriciyi Aç / Kapat",
     stopAllAction: "Tüm Sesleri Durdur",
     toggleHearMyselfAction: "Kendi Sesini Duy",
     changeHint: "Değiştirmek için bir tuşa tıklayın",

@@ -17,7 +17,6 @@ export interface TranslationSchema {
   };
   voice: {
     title: string;
-    subtitle: string;
     active: string;
     editing: string;
     back: string;
